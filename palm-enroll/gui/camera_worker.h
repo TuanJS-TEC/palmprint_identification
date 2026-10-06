@@ -11,6 +11,7 @@
 #include <QMetaType>
 #include <QObject>
 
+#include "capture_gate.h"
 #include "config.h"
 #include "hand_crop.h"
 #include "hand_detector.h"
@@ -20,6 +21,8 @@ struct FrameResult {
   double viewScale = 1.0;    // view pixels per camera pixel
   palm::HandLandmarks hand;  // camera pixels
   palm::HandCheck check;
+  bool gated = false;        // enrollment: the capture gate decides, see gate
+  palm::GateReport gate;
   bool embedded = false;
   std::vector<float> feat;   // L2-normalised fc1R feature
   QImage roi;                // 112x112 aligned palm ROI the recogniser saw
@@ -39,6 +42,8 @@ class CameraWorker : public QObject {
   void stop() { stop_ = true; }
   // -1: no embeddings, 0: every frame that passes the checks, > 0: at most one per interval
   void setEmbedInterval(int ms) { embedIntervalMs_ = ms; }
+  // true: embed only on frames the capture gate reports Ready (enrollment)
+  void setGated(bool g) { gated_ = g; }
   void setVerbose(bool v) { verbose_ = v; }  // timing summary on stderr every second
 
  public slots:
@@ -55,5 +60,6 @@ class CameraWorker : public QObject {
   bool mirrorSource_;
   std::atomic<bool> stop_{false};
   std::atomic<int> embedIntervalMs_{-1};
+  std::atomic<bool> gated_{false};
   std::atomic<bool> verbose_{false};
 };

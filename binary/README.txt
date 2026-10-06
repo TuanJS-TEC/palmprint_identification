@@ -8,10 +8,13 @@ CHẠY
 
 ĐĂNG KÝ (mỗi người 1 lần, chỉ tay PHẢI)
   1. Nhập ID (mặc định user_0001, user_0002, ...) rồi bấm "Bắt đầu đăng ký".
-  2. Giơ tay PHẢI, lòng bàn tay hướng vào camera, xòe các ngón, cả bàn tay nằm
-     trong hình. Khung quanh tay màu xanh = đạt; màu cam/đỏ = làm theo dòng chữ
-     phía trên (đưa lại gần, giữ yên, quay lòng bàn tay, dùng tay phải, ...).
-  3. App tự chụp 5 mẫu, cách nhau 0.7 giây. Giữa các lần nghiêng/xoay nhẹ tay.
+  2. Đưa tay PHẢI vào khung đặt tay ở giữa hình: lòng bàn tay hướng vào camera,
+     xòe các ngón tự nhiên, cả bàn tay nằm trong hình. Viền khung: đỏ = chưa thấy
+     tay phải; cam = làm theo dòng chữ phía trên (đưa tay gần hơn, lùi tay ra,
+     xoay lòng bàn tay thẳng hơn, mở ngón tay, đổi vị trí nếu ngược sáng, ...).
+  3. Khi đủ điều kiện, viền chuyển xanh và vòng tròn quanh khung chạy dần; giữ yên
+     tay cho đến khi vòng đầy thì app tự chụp (màn hình nháy một lần). Chụp 5 mẫu,
+     cách nhau 0.7 giây; giữa các mẫu nghiêng/xoay nhẹ tay.
   4. Đăng ký lại cùng ID: app hỏi có thay mẫu cũ không. Cùng một bàn tay dưới
      ID khác: bị từ chối.
 

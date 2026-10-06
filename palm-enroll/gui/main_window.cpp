@@ -56,6 +56,14 @@ QString detectText(const FrameResult& r) {
   return s;
 }
 
+// Capture gate measurements of an enrollment sample, for calibrating the limits.
+QString gateText(const FrameResult& r) {
+  const palm::GateReport& g = r.gate;
+  return QStringLiteral("cỡ %1 sáng %2 sat %3 nghiêng %4° ngón %5 | %6 fps")
+      .arg(f2(g.palmFrac), f2(g.mean), f3(g.satFrac), f2(g.angleDeg), f2(g.fingerOpen))
+      .arg(r.fps, 0, 'f', 1);
+}
+
 }  // namespace
 
 MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool mirrorSource, const QString& logPath)
@@ -247,6 +255,7 @@ void MainWindow::onWorkerFailed(const QString& text) {
 void MainWindow::setMode(Mode m) {
   mode_ = m;
   worker_->setEmbedInterval(m == Mode::Enroll ? cfg_.session.gapMs : m == Mode::Identify ? 0 : -1);
+  worker_->setGated(m == Mode::Enroll);
   const bool idle = m == Mode::Idle;
   enrollBtn_->setEnabled(idle);
   idEdit_->setEnabled(idle);
@@ -321,13 +330,15 @@ void MainWindow::toggleIdentify(bool on) {
 
 void MainWindow::logFrame(const FrameResult& r) {
   // hand state changes, at most one line per 0.5 s (a hand at a limit flickers)
-  const int st = static_cast<int>(r.check.state);
+  // enrollment logs the gate's status, the other modes the hand check's
+  const int st = r.gated ? 100 + static_cast<int>(r.gate.status) : static_cast<int>(r.check.state);
   if (st != loggedState_ && (!handLogClock_.isValid() || handLogClock_.elapsed() >= 500)) {
     loggedState_ = st;
     handLogClock_.start();
-    log_->add("HAND", QStringLiteral("%1 | %2 | detect %3 ms")
-                          .arg(QString::fromUtf8(palm::stateMessage(r.check.state)), detectText(r))
-                          .arg(r.msDetect, 0, 'f', 0));
+    const QString msg = r.gated ? QString::fromUtf8(palm::gateMessage(r.gate.status))
+                                : QString::fromUtf8(palm::stateMessage(r.check.state));
+    const QString measured = r.gated ? gateText(r) + " | " + detectText(r) : detectText(r);
+    log_->add("HAND", QStringLiteral("%1 | %2 | detect %3 ms").arg(msg, measured).arg(r.msDetect, 0, 'f', 0));
   }
   // timing summary every 30 s
   if (!perfClock_.isValid()) perfClock_.start();
@@ -396,7 +407,7 @@ void MainWindow::addEnrollSample(const FrameResult& r) {
   const auto other = gallery_.search(r.feat, 1, enrollId_.toStdString());
   if (!other.empty())
     line += QStringLiteral(" | gần nhất người khác %1 %2").arg(QString::fromStdString(other[0].id), f3(other[0].score));
-  line += QStringLiteral(" | %1 | embed %2 ms").arg(detectText(r)).arg(r.msEmbed, 0, 'f', 0);
+  line += QStringLiteral(" | %1 | %2 | embed %3 ms").arg(gateText(r), detectText(r)).arg(r.msEmbed, 0, 'f', 0);
   log_->add("ENROLL", line);
   enrollFeats_.push_back(r.feat);
   if (k < thumbs_.size()) thumbs_[k]->setPixmap(pix(r.roi, 52));

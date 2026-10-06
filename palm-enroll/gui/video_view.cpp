@@ -18,6 +18,35 @@ QColor stateColor(palm::HandState s) {
   }
 }
 
+// Enrollment: red = no usable hand, amber = adjust or hold still, green = capturing.
+QColor gateColor(palm::GateStatus s) {
+  switch (s) {
+    case palm::GateStatus::NoHand:
+    case palm::GateStatus::LeftHand:
+    case palm::GateStatus::BackOfHand: return QColor(231, 76, 60);
+    case palm::GateStatus::Ready: return QColor(46, 204, 113);
+    default: return QColor(243, 156, 18);
+  }
+}
+
+// Fixed target in the middle of the picture, with a ring that fills while the hand is held still.
+void drawTarget(QPainter& p, const QRectF& picture, float progress) {
+  const double side = picture.height() * 0.6;
+  const QPointF c = picture.center();
+  const QRectF box(c.x() - side / 2, c.y() - side / 2, side, side);
+  p.setBrush(Qt::NoBrush);
+  p.setPen(QPen(QColor(255, 255, 255, 170), 2, Qt::DashLine));
+  p.drawRoundedRect(box, 12, 12);
+  const double r = side / 2 + 14;
+  const QRectF ring(c.x() - r, c.y() - r, 2 * r, 2 * r);
+  p.setPen(QPen(QColor(255, 255, 255, 60), 4));
+  p.drawEllipse(ring);
+  if (progress > 0) {
+    p.setPen(QPen(QColor(46, 204, 113), 6, Qt::SolidLine, Qt::RoundCap));
+    p.drawArc(ring, 90 * 16, -qRound(progress * 360 * 16));  // clockwise from the top
+  }
+}
+
 void drawLabel(QPainter& p, const QRect& area, const QString& text, const QColor& bg, int px, int flags) {
   QFont f = p.font();
   f.setPixelSize(px);
@@ -74,7 +103,7 @@ void VideoView::paintEvent(QPaintEvent*) {
   }
   p.drawImage(QRectF(QPointF(0, 0), size), r_.view);
   const double s = k * r_.viewScale;  // camera pixel -> widget pixel
-  const QColor c = stateColor(r_.check.state);
+  const QColor c = r_.gated ? gateColor(r_.gate.status) : stateColor(r_.check.state);
   if (r_.hand.found) {
     const QRectF box(r_.check.box.x * s, r_.check.box.y * s, r_.check.box.width * s, r_.check.box.height * s);
     p.setBrush(Qt::NoBrush);
@@ -87,8 +116,8 @@ void VideoView::paintEvent(QPaintEvent*) {
     p.setPen(Qt::NoPen);
     p.setBrush(c);
     for (const auto& q : r_.hand.pts) p.drawEllipse(QPointF(q.x * s, q.y * s), 3.5, 3.5);
-  } else {
-    // where to put the hand
+  } else if (!r_.gated) {
+    // where to put the hand (the enrollment target is drawn below instead)
     const double side = size.height() * 0.6;
     p.setBrush(Qt::NoBrush);
     p.setPen(QPen(QColor(255, 255, 255, 150), 2, Qt::DashLine));
@@ -96,8 +125,14 @@ void VideoView::paintEvent(QPaintEvent*) {
   }
   p.restore();
 
+  QString message = QString::fromUtf8(palm::stateMessage(r_.check.state));
+  if (r_.gated) {
+    message = QString::fromUtf8(palm::gateMessage(r_.gate.status));
+    if (r_.embedded) p.fillRect(rect(), QColor(255, 255, 255, 150));  // a sample was taken: flash
+    drawTarget(p, target, r_.gate.progress);
+  }
   const QRect area = target.toRect().adjusted(10, 10, -10, -10);
-  drawLabel(p, area, QString::fromUtf8(palm::stateMessage(r_.check.state)), c.darker(130), 24, Qt::AlignTop);
+  drawLabel(p, area, message, c.darker(130), 24, Qt::AlignTop);
   if (!banner_.isEmpty()) {
     QFont f = p.font();
     f.setPixelSize(22);

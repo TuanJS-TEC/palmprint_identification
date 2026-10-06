@@ -47,6 +47,17 @@ capture:
   min_crop_frac: 0.33     # hand crop side / frame height (log: >= 0.36)
   max_motion: 0.02        # landmark motion per frame / crop side
   blur_min: 100           # Laplacian variance; hand_crop p1 116, live-path p1 216
+  # enrollment capture gate (capture_gate.h): checked in this order, after checkHand
+  edge_margin: 0.02       # every landmark keeps this fraction of the frame from the edge
+  min_palm_frac: 0.15     # wrist -> middle knuckle / frame height: below = move closer (estimate)
+  max_palm_frac: 0.30     # above = move back (estimate)
+  max_angle_deg: 35       # wrist -> middle knuckle from upright
+  min_finger_open: 0.6    # mean knuckle -> tip of 4 fingers / wrist -> middle knuckle: below = fingers curled (estimate)
+  min_mean: 50            # palm gray level (0..255): darker = too dark
+  max_mean: 200           # brighter = too bright
+  max_sat_frac: 0.05      # share of palm pixels >= 250
+  stable_ms: 400          # held still for this long ...
+  stable_min_frames: 10   # ... and over at least this many frames (slow machines)
 session:
   enroll_samples: 5
   enroll_gap_ms: 700      # between two enrollment captures

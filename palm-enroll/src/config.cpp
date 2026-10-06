@@ -65,6 +65,16 @@ Config loadConfig(const std::string& path) {
   read(cap, "min_crop_frac", c.capture.minCropFrac);
   read(cap, "max_motion", c.capture.maxMotion);
   read(cap, "blur_min", c.capture.blurMin);
+  read(cap, "edge_margin", c.gate.edgeMargin);
+  read(cap, "min_palm_frac", c.gate.minPalmFrac);
+  read(cap, "max_palm_frac", c.gate.maxPalmFrac);
+  read(cap, "max_angle_deg", c.gate.maxAngleDeg);
+  read(cap, "min_finger_open", c.gate.minFingerOpen);
+  read(cap, "min_mean", c.gate.minMean);
+  read(cap, "max_mean", c.gate.maxMean);
+  read(cap, "max_sat_frac", c.gate.maxSatFrac);
+  read(cap, "stable_ms", c.gate.stableMs);
+  read(cap, "stable_min_frames", c.gate.stableMinFrames);
   const cv::FileNode ses = fs["session"];
   read(ses, "enroll_samples", c.session.samples);
   read(ses, "enroll_gap_ms", c.session.gapMs);

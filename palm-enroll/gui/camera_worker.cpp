@@ -125,6 +125,8 @@ void CameraWorker::run() {
     std::unique_ptr<Grabber> grabber;
     if (still.empty()) grabber = std::make_unique<Grabber>(cap);
     palm::HandLandmarks prev;
+    palm::CaptureGate gate(cfg_.gate);
+    bool wasGated = false;
     auto lastEmbed = Clock::now() - std::chrono::hours(1);
     auto tPrev = Clock::now(), tLog = Clock::now();
     double fps = 0, sumDetect = 0, sumEmbed = 0;
@@ -156,8 +158,16 @@ void CameraWorker::run() {
       prev = r.hand;
       r.msDetect = msSince(t0);
 
+      // the gate runs on every frame, so its stability window is full when enrollment starts
+      const double nowMs = std::chrono::duration<double, std::milli>(Clock::now().time_since_epoch()).count();
+      r.gated = gated_;
+      if (r.gated && !wasGated) gate.restart();
+      wasGated = r.gated;
+      r.gate = gate.update(frame, r.check, r.hand, nowMs);
+
       const int every = embedIntervalMs_;
-      if (every >= 0 && r.check.state == palm::HandState::Ok && msSince(lastEmbed) >= every) {
+      const bool ready = r.gated ? r.gate.status == palm::GateStatus::Ready : r.check.state == palm::HandState::Ok;
+      if (every >= 0 && ready && msSince(lastEmbed) >= every) {
         const auto t1 = Clock::now();
         const cv::Mat crop = frame(r.check.box);
         const palm::Embedding e = model.run(crop, false);  // camera frames are not mirrored
@@ -169,6 +179,7 @@ void CameraWorker::run() {
         r.embedded = true;
         r.msEmbed = msSince(t1);
         lastEmbed = Clock::now();
+        if (r.gated) gate.restart();  // every sample needs its own stable window
       }
 
       r.viewScale = std::min(1.0, 1280.0 / frame.cols);

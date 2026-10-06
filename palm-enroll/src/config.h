@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 
+#include "capture_gate.h"
 #include "gallery.h"
 #include "hand_crop.h"
 #include "palm_model.h"
@@ -33,6 +34,7 @@ struct Config {
     bool displayMirror = true;  // show the preview like a mirror
   } camera;
   CaptureLimits capture;
+  GateLimits gate;            // enrollment capture gate (capture_gate.h)
   struct {
     int samples = 5;            // embeddings per enrollment
     int gapMs = 700;            // between two enrollment captures

@@ -25,6 +25,7 @@ add_library(palm
   src/config.cpp
   src/hand_detector.cpp
   src/hand_crop.cpp
+  src/capture_gate.cpp
   src/palm_api.cpp)
 target_include_directories(palm PUBLIC src ${ORT_INCLUDE_DIR})
 target_link_libraries(palm PUBLIC ${OpenCV_LIBS} ${ORT_LIBRARY})
@@ -92,6 +93,11 @@ add_test(NAME preprocess COMMAND test_preprocess)
 add_executable(test_gallery tests/test_gallery.cpp)
 target_link_libraries(test_gallery PRIVATE palm)
 add_test(NAME gallery COMMAND test_gallery)
+
+# capture gate on synthetic landmarks (no ONNX models needed)
+add_executable(test_capture_gate tests/test_capture_gate.cpp)
+target_link_libraries(test_capture_gate PRIVATE palm)
+add_test(NAME capture_gate COMMAND test_capture_gate)
 
 # needs tests/data/ref from python/export_cpp_ref.py; exits 77 (skipped) when missing
 add_executable(test_parity tests/test_parity.cpp)
