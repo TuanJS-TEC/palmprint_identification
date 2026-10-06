@@ -1,0 +1,32 @@
+model /home/admin/DMS_palmprint/models/EE_PRnet-epoch-60.onnx  threads 4  input224 resize224  mirror 0
+right hand only (handedness 'Left'): 410 of 825 labelled rows
+images: 324 embedded (410 rows)
+  rejected by live checks: Đưa tay phải vào khung hình          2
+  rejected by live checks: Quay LÒNG bàn tay phải về phía camera 3
+  rejected by live checks: Đưa cả bàn tay vào giữa khung hình 81
+timing per image: preprocess p50 4.2 ms, inference p50 28.1 ms (p95 38.5 ms)
+crop sharpness (var of Laplacian): p1 215.9  p5 294.9  p50 556.6
+people: 24
+
+[sample vs sample]
+  genuine (same person)      n=2658    mean 0.895  std 0.124  p1 0.446  p50 0.946  p99 0.997
+  impostor (other person)    n=49668   mean 0.529  std 0.109  p1 0.258  p50 0.535  p99 0.746
+  sample-sample: EER 6.92% at cos 0.685
+    FAR <= 0.01  : threshold 0.746  FAR 0.9986%  FRR 11.89%
+    FAR <= 0.001 : threshold 0.795  FAR 0.0987%  FRR 16.70%
+
+[enrollment: first 5 samples -> template, rest are probes]
+  gallery 20 people (4 with <= 5 samples skipped, 0 failed template: their probes not counted), 215 probes
+  rank-1 identification: 88.84%  (chance 5.00%)
+  probe vs own template      n=215     mean 0.900  std 0.120  p1 0.518  p50 0.950  p99 0.997
+  probe vs other templates   n=4085    mean 0.547  std 0.106  p1 0.289  p50 0.553  p99 0.755
+  enroll sample vs medoid    n=80      mean 0.943  std 0.070  p1 0.713  p50 0.968  p99 0.997
+  probe-template: EER 9.77% at cos 0.682
+    FAR <= 0.01  : threshold 0.755  FAR 0.9792%  FRR 13.02%
+  at accept_cos_min 0.820: correct accept 84.19%, wrong accept 0.00%, rejected 15.81%
+
+suggested config.yaml values (from this data set):
+  match.accept_cos_min:     0.755   (probe-template FAR <= 0.01, FRR 13.02%)
+  template.dup_cos_max:     0.755   (a new enrollee accepted as an enrolled id is a duplicate)
+  template.outlier_cos_min: 0.553   (median probe vs other templates: a sample farther from its
+                                    own medoid than a typical other person is an outlier)

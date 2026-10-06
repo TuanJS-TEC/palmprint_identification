@@ -1,0 +1,34 @@
+# Virtualenv and build outputs
+venv/
+build/
+palm-enroll/build/
+__pycache__/
+*.o
+*.a
+*.so
+*.d
+*.ninja
+.DS_Store
+
+# Generated output
+output/
+
+# Model weights and large binary assets (not pushed)
+models/
+binary/models/
+binary/palm_cli
+binary/palm_gui
+binary/gallery.bin
+*.onnx
+*.mat
+*.f32
+*.task
+*.bin
+*.pth
+*.pt
+
+# Third-party reference code and dataset (not part of this repo)
+Palmprint-Recognition-in-the-Wild-master/
+
+# Local tool settings
+.claude/

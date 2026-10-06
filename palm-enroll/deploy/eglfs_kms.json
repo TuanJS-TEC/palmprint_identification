@@ -1,0 +1,9 @@
+{
+  "device": "/dev/dri/card0",
+  "hwcursor": false,
+  "outputs": [
+    { "name": "DP1", "mode": "current" },
+    { "name": "HDMI1", "mode": "current" },
+    { "name": "HDMI2", "mode": "current" }
+  ]
+}

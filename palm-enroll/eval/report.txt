@@ -1,0 +1,32 @@
+model /home/admin/DMS_palmprint/models/EE_PRnet-epoch-60.onnx  threads 4  input224 resize224  mirror 0
+right hand only (handedness 'Left'): 410 of 825 labelled rows
+images: 409 embedded (410 rows)
+timing per image: preprocess p50 5.8 ms, inference p50 29.3 ms (p95 40.6 ms)
+crop sharpness (var of Laplacian): p1 115.8  p5 196.5  p50 438.8
+people: 25
+
+[sample vs sample]
+  genuine (same person)      n=3513    mean 0.861  std 0.172  p1 0.195  p50 0.928  p99 0.996
+  impostor (other person)    n=79923   mean 0.510  std 0.123  p1 0.151  p50 0.521  p99 0.744
+  sample-sample: EER 10.90% at cos 0.652
+    FAR <= 0.01  : threshold 0.744  FAR 0.9997%  FRR 15.68%
+    FAR <= 0.001 : threshold 0.785  FAR 0.0988%  FRR 21.32%
+
+[enrollment: first 5 samples -> template, rest are probes]
+  gallery 25 people (0 with <= 5 samples skipped, 0 failed template: their probes not counted), 284 probes
+  rank-1 identification: 89.08%  (chance 4.00%)
+  probe vs own template      n=284     mean 0.888  std 0.129  p1 0.403  p50 0.927  p99 0.997
+  probe vs other templates   n=6816    mean 0.532  std 0.114  p1 0.241  p50 0.541  p99 0.750
+  enroll sample vs medoid    n=100     mean 0.880  std 0.163  p1 0.312  p50 0.945  p99 0.997
+  probe-template: EER 9.15% at cos 0.672
+    FAR <= 0.01  : threshold 0.750  FAR 0.9977%  FRR 10.92%
+    FAR <= 0.001 : threshold 0.795  FAR 0.0880%  FRR 15.14%
+  at accept_cos_min 0.820: correct accept 83.45%, wrong accept 0.00%, rejected 16.55%
+
+suggested config.yaml values (from this data set):
+  match.accept_cos_min:     0.795   (probe-template FAR <= 0.001, FRR 15.14%)
+  template.dup_cos_max:     0.795   (a new enrollee accepted as an enrolled id is a duplicate)
+  template.outlier_cos_min: 0.541   (median probe vs other templates: a sample farther from its
+                                    own medoid than a typical other person is an outlier)
+scores written to eval/scores.csv
+ROI sheet (first sample of each person) written to eval/rois.jpg

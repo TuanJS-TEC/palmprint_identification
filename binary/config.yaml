@@ -1,0 +1,54 @@
+%YAML:1.0
+---
+# palm-enroll configuration (OpenCV FileStorage YAML: keep the %YAML:1.0 line).
+# Relative paths are resolved against the directory of this file.
+# Thresholds were measured with palm_eval on the right hands in output/hand_crop
+# (409 images, 25 people, 2026-10-05, report in eval/); re-measure when the
+# camera, the hand crop or the model changes.
+model:
+  onnx: "models/EE_PRnet-epoch-60.onnx"   # from convert_mat_to_onnx.py
+  version: "ee_prnet_e60"                    # stored in the gallery; change => re-enroll
+  threads: 4                                 # physical cores of the target (i5-10210U: 4)
+  input224_mode: "resize224"                 # resize224 (as in training) | original
+hand:
+  # Only the physical right hand is enrolled and identified (one per person).
+  # right_label: handedness label of the physical right hand in LABELS.csv
+  # (palm_cli --label, palm_eval). The capture script mirrored its frames
+  # before MediaPipe, which labels a hand as it looks in the image, so the
+  # physical right hand is "Left" in log_label.csv (checked: mirrored text in
+  # output/original, palm side of the landmarks, wrist watch; palm_handcheck).
+  # palm_gui does not use it: it detects on real camera frames, where the
+  # right hand is "Right".
+  right_label: "Left"
+  palm_onnx: "models/palm_detection_mediapipe_2023feb.onnx"            # OpenCV Zoo, Apache-2.0
+  landmark_onnx: "models/handpose_estimation_mediapipe_2023feb.onnx"
+preprocess:
+  # 1 if the hand crops are mirror images. The network expects a right palm
+  # seen from the front (thumb on the image's right), as in NTU-PI-v1;
+  # output/hand_crop already is (mirroring them: EER 9.2% -> 10.6%).
+  mirror_input: 0
+template:
+  min_valid: 3
+  outlier_cos_min: 0.5    # safety net, ~ median impostor score (0.54); no right-hand
+                          # enrollment in our data has an outlier
+  dup_cos_max: 0.82       # same as accept_cos_min
+match:
+  accept_cos_min: 0.82    # FAR 0.1% estimated at 0.795 from only ~6 impostor scores;
+                          # 0.82: 0 wrong accepts, 16.5% single images rejected
+gallery: "gallery.bin"
+# ---- live capture (palm_gui)
+camera:
+  device: 0               # /dev/video0
+  width: 1920             # the capture log was 1920x1080
+  height: 1080
+  display_mirror: 1       # preview shown like a mirror (detection uses the real frame)
+capture:
+  crop_scale: 1.17        # hand crop side / landmark box, fitted on output/hand_crop
+  min_crop_frac: 0.33     # hand crop side / frame height (log: >= 0.36)
+  max_motion: 0.02        # landmark motion per frame / crop side
+  blur_min: 100           # Laplacian variance; hand_crop p1 116, live-path p1 216
+session:
+  enroll_samples: 5
+  enroll_gap_ms: 700      # between two enrollment captures
+  enroll_timeout_s: 60
+  identify_confirm_frames: 3
