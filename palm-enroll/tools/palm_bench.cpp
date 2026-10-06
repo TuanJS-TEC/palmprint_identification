@@ -39,6 +39,7 @@ namespace {
 
 const char* kUsage = R"(usage: palm_bench [--config config.yaml] (--frames DIR [--frames-mirrored] | --crops DIR)
                  [--limit N] [--repeat R] [--warmup W] [--gallery-sizes 25,1000,10000] [--gallery FILE]
+                 [--det-threads T]
   --frames DIR         full camera frames (*.jpg, *.png): detect -> checks -> crop -> vector -> match
   --crops DIR          hand crops: vector -> match only
   --frames-mirrored    frames are mirror images of the camera view (as palm_eval)
@@ -46,6 +47,7 @@ const char* kUsage = R"(usage: palm_bench [--config config.yaml] (--frames DIR [
   --warmup W           drop the first W frames from the statistics (default 5)
   --gallery-sizes L    match against synthetic galleries of these sizes (default 25,1000,10000)
   --gallery FILE       match against a real gallery.bin instead
+  --det-threads T      hand detector threads (default 2, as palm_gui)
 )";
 
 using Clock = std::chrono::steady_clock;
@@ -103,6 +105,7 @@ int main(int argc, char** argv) {
     const int repeat = std::stoi(a.get("repeat", "1"));
     const size_t warmup = std::stoul(a.get("warmup", "5"));
     const size_t limit = std::stoul(a.get("limit", "0"));
+    const int detThreads = std::stoi(a.get("det-threads", "2"));
 
     std::vector<std::string> files;
     for (const auto& e : fs::directory_iterator(dir)) {
@@ -134,7 +137,7 @@ int main(int argc, char** argv) {
     }
 
     std::unique_ptr<HandDetector> det;
-    if (fromFrames) det = std::make_unique<HandDetector>(cfg.hand.palmOnnx, cfg.hand.landmarkOnnx, cfg.model.threads);
+    if (fromFrames) det = std::make_unique<HandDetector>(cfg.hand.palmOnnx, cfg.hand.landmarkOnnx, detThreads);
 
     Stats sDetect, sCheck, sCrop, sPre, sInf, sNorm, sVec;
     std::vector<Stats> sMatch(galleries.size()), sE2e(galleries.size());
@@ -216,8 +219,9 @@ int main(int argc, char** argv) {
 
     // ---- report
     const double total = static_cast<double>(nAll);
-    std::printf("palm_bench  model %s  threads %d  input224 %s  mirror_input %d\n", cfg.model.onnxPath.c_str(),
-                cfg.model.threads, cfg.model.input224Original ? "original" : "resize224", cfg.mirrorInput);
+    std::printf("palm_bench  model %s  threads %d  detector threads %d  input224 %s  mirror_input %d\n",
+                cfg.model.onnxPath.c_str(), cfg.model.threads, detThreads,
+                cfg.model.input224Original ? "original" : "resize224", cfg.mirrorInput);
     std::printf("source %s (%s): %zu files x %d run(s), warmup %zu, measured %zu\n", dir.c_str(),
                 fromFrames ? "full frames" : "hand crops", files.size(), repeat, warmup, nAll);
     if (fromFrames) {

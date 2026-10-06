@@ -1,0 +1,5 @@
+/* libpalm.so exports the C API of palm_api.h and nothing else */
+{
+  global: palm_*;
+  local: *;
+};

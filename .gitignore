@@ -32,3 +32,6 @@ Palmprint-Recognition-in-the-Wild-master/
 
 # Local tool settings
 .claude/
+
+# SDK packages for the mobile team (palm-enroll/sdk/make_sdk.sh)
+dist/

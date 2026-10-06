@@ -1,8 +1,11 @@
 // palm_gui: right-hand palmprint enrollment and identification on a live camera.
 //
 // usage: palm_gui [config.yaml] [--source IMAGE|VIDEO [--mirrored]] [--fullscreen]
-//                 [--enroll ID | --identify] [--verbose] [--screenshot FILE --quit-after SEC]
+//                 [--enroll ID | --identify] [--verbose] [--log FILE]
+//                 [--screenshot FILE --quit-after SEC]
 //   config.yaml   default: next to the executable
+//   --log         event log file, default palm_gui.log next to config.yaml;
+//                 "" for the log panel only (F2 shows / hides the panel)
 //   --source      replay an image or a video instead of the camera (testing);
 //                 --mirrored if it is a mirror image of the camera view
 //   --enroll ID   start enrolling ID right away; --identify: start identifying
@@ -12,6 +15,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QTimer>
 
@@ -25,7 +29,8 @@ int main(int argc, char** argv) {
   QString cfgPath = QDir(QCoreApplication::applicationDirPath()).filePath("config.yaml");
   std::string source;
   bool mirrored = false, fullscreen = false, identify = false, verbose = false;
-  QString shot, enrollId;
+  QString shot, enrollId, logPath;
+  bool logSet = false;
   int quitAfter = 0;
   const QStringList args = QCoreApplication::arguments();
   for (int i = 1; i < args.size(); ++i) {
@@ -41,6 +46,7 @@ int main(int argc, char** argv) {
       else if (a == "--enroll") enrollId = value();
       else if (a == "--identify") identify = true;
       else if (a == "--verbose") verbose = true;
+      else if (a == "--log") logPath = value(), logSet = true;
       else if (a == "--screenshot") shot = value();
       else if (a == "--quit-after") quitAfter = value().toInt();
       else if (!a.startsWith("--")) cfgPath = a;
@@ -59,7 +65,8 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  MainWindow w(cfg, source, mirrored);
+  if (!logSet) logPath = QFileInfo(cfgPath).absoluteDir().filePath("palm_gui.log");
+  MainWindow w(cfg, source, mirrored, logPath);
   w.setVerbose(verbose);
   const bool embedded = QGuiApplication::platformName().startsWith("eglfs") ||
                         QGuiApplication::platformName().startsWith("linuxfb");

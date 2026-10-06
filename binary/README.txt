@@ -7,7 +7,7 @@ CHẠY
   Thoát: phím Esc hoặc nút "Thoát". Mỗi lần chỉ chạy được 1 app dùng camera.
 
 ĐĂNG KÝ (mỗi người 1 lần, chỉ tay PHẢI)
-  1. Nhập ID (mặc định user_01, user_02, ...) rồi bấm "Bắt đầu đăng ký".
+  1. Nhập ID (mặc định user_0001, user_0002, ...) rồi bấm "Bắt đầu đăng ký".
   2. Giơ tay PHẢI, lòng bàn tay hướng vào camera, xòe các ngón, cả bàn tay nằm
      trong hình. Khung quanh tay màu xanh = đạt; màu cam/đỏ = làm theo dòng chữ
      phía trên (đưa lại gần, giữ yên, quay lòng bàn tay, dùng tay phải, ...).
@@ -23,10 +23,28 @@ NHẬN DẠNG
 
 TỆP
   palm_gui, palm_cli   chương trình; palm_cli quản lý gallery bằng dòng lệnh
-                       (./palm_cli list, ./palm_cli remove --id user_01)
+                       (./palm_cli list, ./palm_cli remove --id user_0001)
   config.yaml          camera, ngưỡng; ngưỡng đo trên dữ liệu output/ của dự án
   gallery.bin          người đã đăng ký, tạo ở lần đăng ký đầu (CHƯA mã hóa)
+  palm_gui.log         log sự kiện và độ tin cậy (xem mục LOG)
   models/              EE_PRnet (nhận dạng) + 2 model MediaPipe phát hiện tay (Apache-2.0)
+
+LOG
+  Khung dưới video ghi từng sự kiện; phím F2 hoặc nút "Log" để ẩn/hiện.
+  Cùng nội dung được ghi vào palm_gui.log (cạnh config.yaml, khi quá 10 MB
+  đổi tên thành palm_gui.log.1). Xem từ SSH: tail -f palm_gui.log
+  HAND    trạng thái tay khi đổi + độ tin cậy của 2 model MediaPipe:
+          palm = điểm phát hiện lòng bàn tay, pres = có bàn tay (>= 0.8 mới
+          tính), right = xác suất tay PHẢI (> 0.5), box = cạnh khung cắt (px),
+          sharp = độ nét (>= blur_min)
+  ENROLL  mỗi mẫu: cos với mẫu 1 / mẫu trước, người khác gần nhất; kết quả
+  ID      mỗi lần nhận dạng: ID gần nhất + cos, người thứ 2 + khoảng cách,
+          ĐẠT k/3 hoặc DƯỚI NGƯỠNG; dòng xanh XÁC NHẬN khi đủ 3 khung liên tiếp
+  PERF    mỗi 30 s: fps, thời gian phát hiện tay và embedding
+  Model nhận dạng (EE-PRnet) không cho xác suất: độ tin cậy của nó là cos
+  (1 = giống hệt). Đo trên ảnh camera: đúng người trung vị 0.95, người khác
+  trung vị 0.55 và 99% dưới 0.76; ngưỡng chấp nhận 0.82.
+  Tham số: --log FILE để ghi chỗ khác, --log "" để chỉ hiện trên màn hình.
 
 THỬ KHÔNG CẦN CAMERA
   ./run_gui.sh --source anh.jpg             ảnh chụp thẳng từ camera

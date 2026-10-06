@@ -1,6 +1,7 @@
 #pragma once
 // Enrollment template (several samples -> one L2-normalised 512-d vector),
 // cosine matching and a small on-disk gallery.
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -39,23 +40,35 @@ struct Match {
   float score = 0.f;
 };
 
+// "user_<1-9 digits>" -> n. False for any other id; never throws.
+bool parseUserSeq(const std::string& id, uint32_t& n);
+
 class Gallery {
  public:
   explicit Gallery(std::string modelVersion = {}, int dim = 512) : modelVersion_(std::move(modelVersion)), dim_(dim) {}
 
-  // Missing file -> empty gallery. Throws on a corrupt file or a different model version.
+  // Missing file -> empty gallery. Throws on a corrupt file or a different
+  // model version, and then leaves the gallery unchanged.
   void load(const std::string& path);
-  void save(const std::string& path) const;  // atomic (write + rename)
+  // Atomic: written to a temporary file of its own, then renamed over path.
+  void save(const std::string& path) const;
 
   void upsert(GalleryEntry e);
   bool remove(const std::string& id);
   const std::vector<GalleryEntry>& entries() const { return entries_; }
+  bool contains(const std::string& id) const;
   std::vector<Match> search(const Vec& probe, int topK, const std::string& excludeId = {}) const;
+
+  // Next automatic id, "user_0001", "user_0002", ...: one above every
+  // user_<n> id this gallery has held, so the id of a removed person is
+  // never given out again (the counter is stored in the file).
+  std::string nextId() const;
 
  private:
   std::string modelVersion_;
   int dim_;
   std::vector<GalleryEntry> entries_;
+  uint32_t nextSeq_ = 1;
 };
 
 }  // namespace palm

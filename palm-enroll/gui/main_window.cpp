@@ -39,17 +39,55 @@ QString resultHtml(const QString& big, const QString& small, const QColor& c) {
       .arg(c.name(), big.toHtmlEscaped(), small.toHtmlEscaped());
 }
 
+QString f2(double v) { return QString::number(v, 'f', 2); }
+QString f3(double v) { return QString::number(v, 'f', 3); }
+
+// Confidences of the MediaPipe models for the log: palm detector score, hand
+// presence of the landmark model, its P(right hand); then crop size and sharpness.
+QString detectText(const FrameResult& r) {
+  const palm::HandLandmarks& h = r.hand;
+  if (h.palmScore <= 0.f) return QStringLiteral("palm -");
+  QString s = QStringLiteral("palm %1 pres %2").arg(f2(h.palmScore), f2(h.presence));
+  if (!h.found) return s;
+  s += QStringLiteral(" right %1 box %2px").arg(f2(h.handedness)).arg(r.check.box.width);
+  if (r.check.state == palm::HandState::Moving)  // 1e9: no hand in the previous frame
+    s += QStringLiteral(" motion %1").arg(r.check.motion < 1e6f ? f3(r.check.motion) : QStringLiteral("-"));
+  if (r.check.sharp > 0) s += QStringLiteral(" sharp %1").arg(r.check.sharp, 0, 'f', 0);
+  return s;
+}
+
 }  // namespace
 
-MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool mirrorSource)
+MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool mirrorSource, const QString& logPath)
     : cfg_(cfg), gallery_(cfg.modelVersion) {
   setWindowTitle(QStringLiteral("Palmprint - đăng ký tay phải"));
+  log_ = new EventLog(logPath);  // first: everything below may log
+  log_->setFixedHeight(170);
+  log_->add("APP", QStringLiteral("palm_gui khởi động, gallery %1").arg(QString::fromStdString(cfg_.galleryPath)));
+  if (log_->fileOpen())
+    log_->add("APP", QStringLiteral("file log: %1").arg(log_->filePath()));
+  else if (!logPath.isEmpty())
+    log_->add("APP", QStringLiteral("không ghi được file log %1: %2").arg(logPath, log_->fileError()), EventLog::Warn);
+  log_->add("APP", QStringLiteral("ngưỡng: nhận dạng cos >= %1 trong %2 khung liên tiếp | trùng khi đăng ký cos > %3 | "
+                                  "%4 mẫu, cần %5 mẫu nhất quán | blur_min %6")
+                       .arg(f2(cfg_.acceptCosMin))
+                       .arg(cfg_.session.identifyConfirm)
+                       .arg(f2(cfg_.dupCosMax))
+                       .arg(cfg_.session.samples)
+                       .arg(cfg_.tmpl.minValid)
+                       .arg(cfg_.capture.blurMin, 0, 'f', 0));
   try {
     gallery_.load(cfg_.galleryPath);
+    log_->add("APP", QStringLiteral("%1 người đã đăng ký, ID tự động kế tiếp %2")
+                         .arg(gallery_.entries().size())
+                         .arg(QString::fromStdString(gallery_.nextId())));
   } catch (const std::exception& e) {
     const std::string bak = cfg_.galleryPath + ".bak";
     std::error_code ec;
     std::filesystem::rename(cfg_.galleryPath, bak, ec);
+    log_->add("APP", QStringLiteral("không đọc được gallery (%1); đổi tên thành %2, bắt đầu gallery mới")
+                         .arg(QString::fromStdString(e.what()), QString::fromStdString(bak)),
+              EventLog::Fail);
     QMessageBox::warning(this, QStringLiteral("Gallery"),
                          QStringLiteral("Không đọc được gallery (%1).\nFile cũ được đổi tên thành %2; bắt đầu gallery mới.")
                              .arg(QString::fromStdString(e.what()), QString::fromStdString(bak)));
@@ -126,14 +164,27 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
   lv->addWidget(deleteBtn_);
   pv->addWidget(listBox, 1);
 
+  auto* bottomRow = new QHBoxLayout;
+  logBtn_ = new QPushButton(QStringLiteral("Log (F2)"));
+  logBtn_->setCheckable(true);
+  logBtn_->setChecked(true);
+  logBtn_->setStyleSheet("QPushButton { background:#444; } QPushButton:checked { background:#3d5a80; }");
   auto* quit = new QPushButton(QStringLiteral("Thoát (Esc)"));
-  pv->addWidget(quit);
+  bottomRow->addWidget(logBtn_);
+  bottomRow->addWidget(quit);
+  pv->addLayout(bottomRow);
 
+  auto* left = new QWidget;  // video above the log
+  auto* lv2 = new QVBoxLayout(left);
+  lv2->setContentsMargins(0, 0, 0, 0);
+  lv2->setSpacing(0);
+  lv2->addWidget(video_, 1);
+  lv2->addWidget(log_);
   auto* central = new QWidget;
   auto* h = new QHBoxLayout(central);
   h->setContentsMargins(0, 0, 0, 0);
   h->setSpacing(0);
-  h->addWidget(video_, 1);
+  h->addWidget(left, 1);
   h->addWidget(panel);
   setCentralWidget(central);
   setStyleSheet("QMainWindow, QWidget { background:#2b2b2b; color:#eee; font-size:14px; }"
@@ -151,6 +202,7 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
   connect(identifyBtn_, &QPushButton::toggled, this, &MainWindow::toggleIdentify);
   connect(deleteBtn_, &QPushButton::clicked, this, &MainWindow::deleteSelected);
   connect(quit, &QPushButton::clicked, this, &QWidget::close);
+  connect(logBtn_, &QPushButton::toggled, log_, &QWidget::setVisible);
 
   refreshList();
   idEdit_->setText(nextFreeId());
@@ -176,17 +228,20 @@ MainWindow::~MainWindow() {
 void MainWindow::keyPressEvent(QKeyEvent* e) {
   if (e->key() == Qt::Key_Escape) close();
   else if (e->key() == Qt::Key_F11) isFullScreen() ? showNormal() : showFullScreen();
+  else if (e->key() == Qt::Key_F2) logBtn_->toggle();
   else QMainWindow::keyPressEvent(e);
 }
 
 void MainWindow::onWorkerStatus(const QString& text) {
   status_->setText(text);
   video_->setMessage(text);
+  log_->add("CAM", text);
 }
 
 void MainWindow::onWorkerFailed(const QString& text) {
   status_->setText(QStringLiteral("<span style='color:#e74c3c'>%1</span>").arg(text.toHtmlEscaped()));
   video_->setMessage(text);
+  log_->add("CAM", text, EventLog::Fail);
 }
 
 void MainWindow::setMode(Mode m) {
@@ -226,6 +281,11 @@ void MainWindow::startEnroll() {
   enrollMsg_->setStyleSheet("");
   enrollClock_.start();
   setMode(Mode::Enroll);
+  log_->add("ENROLL", QStringLiteral("bắt đầu đăng ký %1%2: %3 mẫu, cách nhau %4 ms, tối đa %5 s")
+                          .arg(id, exists ? QStringLiteral(" (thay mẫu cũ)") : QString())
+                          .arg(cfg_.session.samples)
+                          .arg(cfg_.session.gapMs)
+                          .arg(cfg_.session.timeoutS));
 }
 
 void MainWindow::beginEnroll(const QString& id) {
@@ -238,6 +298,8 @@ void MainWindow::beginIdentify() { identifyBtn_->setChecked(true); }
 void MainWindow::cancelEnroll() {
   enrollMsg_->setText(QStringLiteral("Đã hủy đăng ký."));
   setMode(Mode::Idle);
+  log_->add("ENROLL", QStringLiteral("hủy đăng ký %1 sau %2/%3 mẫu").arg(enrollId_).arg(enrollFeats_.size()).arg(cfg_.session.samples),
+            EventLog::Warn);
 }
 
 void MainWindow::toggleIdentify(bool on) {
@@ -246,10 +308,47 @@ void MainWindow::toggleIdentify(bool on) {
   result_->clear();
   lastEmbedClock_.start();
   setMode(on ? Mode::Identify : Mode::Idle);
+  if (!on)
+    log_->add("ID", QStringLiteral("dừng nhận dạng"));
+  else if (gallery_.entries().empty())
+    log_->add("ID", QStringLiteral("bắt đầu nhận dạng, nhưng chưa có ai đăng ký"), EventLog::Warn);
+  else
+    log_->add("ID", QStringLiteral("bắt đầu nhận dạng: %1 người, cos >= %2 trong %3 khung liên tiếp")
+                        .arg(gallery_.entries().size())
+                        .arg(f2(cfg_.acceptCosMin))
+                        .arg(cfg_.session.identifyConfirm));
+}
+
+void MainWindow::logFrame(const FrameResult& r) {
+  // hand state changes, at most one line per 0.5 s (a hand at a limit flickers)
+  const int st = static_cast<int>(r.check.state);
+  if (st != loggedState_ && (!handLogClock_.isValid() || handLogClock_.elapsed() >= 500)) {
+    loggedState_ = st;
+    handLogClock_.start();
+    log_->add("HAND", QStringLiteral("%1 | %2 | detect %3 ms")
+                          .arg(QString::fromUtf8(palm::stateMessage(r.check.state)), detectText(r))
+                          .arg(r.msDetect, 0, 'f', 0));
+  }
+  // timing summary every 30 s
+  if (!perfClock_.isValid()) perfClock_.start();
+  ++perfFrames_;
+  perfDetectMs_ += r.msDetect;
+  if (r.embedded) ++perfEmbeds_, perfEmbedMs_ += r.msEmbed;
+  if (perfClock_.elapsed() >= 30000) {
+    log_->add("PERF", QStringLiteral("%1 fps | phát hiện tay %2 ms/khung | embedding %3 lần, %4 ms/lần")
+                          .arg(r.fps, 0, 'f', 1)
+                          .arg(perfDetectMs_ / perfFrames_, 0, 'f', 1)
+                          .arg(perfEmbeds_)
+                          .arg(perfEmbeds_ ? perfEmbedMs_ / perfEmbeds_ : 0.0, 0, 'f', 1));
+    perfFrames_ = perfEmbeds_ = 0;
+    perfDetectMs_ = perfEmbedMs_ = 0;
+    perfClock_.restart();
+  }
 }
 
 void MainWindow::onFrame(const FrameResult& r) {
   video_->setFrame(r);
+  logFrame(r);
   status_->setText(QStringLiteral("%1 fps | tay %2 ms%3 | %4 người đã đăng ký")
                        .arg(r.fps, 0, 'f', 1)
                        .arg(r.msDetect, 0, 'f', 0)
@@ -265,6 +364,12 @@ void MainWindow::onFrame(const FrameResult& r) {
       if (enrollClock_.elapsed() > cfg_.session.timeoutS * 1000LL) {
         enrollMsg_->setText(QStringLiteral("Hết thời gian (%1 s). Thử lại.").arg(cfg_.session.timeoutS));
         setMode(Mode::Idle);
+        log_->add("ENROLL", QStringLiteral("THẤT BẠI %1: hết thời gian %2 s, mới có %3/%4 mẫu")
+                                .arg(enrollId_)
+                                .arg(cfg_.session.timeoutS)
+                                .arg(enrollFeats_.size())
+                                .arg(cfg_.session.samples),
+                  EventLog::Fail);
       } else {
         video_->setBanner(QStringLiteral("Đăng ký %1: %2/%3 mẫu").arg(enrollId_).arg(enrollFeats_.size()).arg(cfg_.session.samples),
                           kBlue);
@@ -284,6 +389,15 @@ void MainWindow::onFrame(const FrameResult& r) {
 
 void MainWindow::addEnrollSample(const FrameResult& r) {
   const size_t k = enrollFeats_.size();
+  // EE-PRnet gives no probability: its confidence is the cosine to other samples / users
+  QString line = QStringLiteral("mẫu %1/%2").arg(k + 1).arg(cfg_.session.samples);
+  if (k >= 2) line += QStringLiteral(" | cos với mẫu 1 %1").arg(f3(palm::dot(r.feat, enrollFeats_.front())));
+  if (k >= 1) line += QStringLiteral(" | cos với mẫu trước %1").arg(f3(palm::dot(r.feat, enrollFeats_.back())));
+  const auto other = gallery_.search(r.feat, 1, enrollId_.toStdString());
+  if (!other.empty())
+    line += QStringLiteral(" | gần nhất người khác %1 %2").arg(QString::fromStdString(other[0].id), f3(other[0].score));
+  line += QStringLiteral(" | %1 | embed %2 ms").arg(detectText(r)).arg(r.msEmbed, 0, 'f', 0);
+  log_->add("ENROLL", line);
   enrollFeats_.push_back(r.feat);
   if (k < thumbs_.size()) thumbs_[k]->setPixmap(pix(r.roi, 52));
   progress_->setValue(static_cast<int>(enrollFeats_.size()));
@@ -298,12 +412,20 @@ void MainWindow::addEnrollSample(const FrameResult& r) {
 void MainWindow::finishEnroll() {
   setMode(Mode::Idle);
   const palm::TemplateResult t = palm::buildTemplate(enrollFeats_, cfg_.tmpl);
+  QString cos;
+  for (float c : t.cosToMedoid) cos += QString::number(c, 'f', 2) + " ";
+  cos = cos.trimmed();
   if (!t.ok) {
-    QString cos;
-    for (float c : t.cosToMedoid) cos += QString::number(c, 'f', 2) + " ";
     enrollMsg_->setText(QStringLiteral("THẤT BẠI: chỉ %1/%2 mẫu nhất quán (cos với mẫu trung tâm: %3). Đăng ký lại.")
-                            .arg(t.kept.size()).arg(enrollFeats_.size()).arg(cos.trimmed()));
+                            .arg(t.kept.size()).arg(enrollFeats_.size()).arg(cos));
     enrollMsg_->setStyleSheet("color:#e74c3c;");
+    log_->add("ENROLL", QStringLiteral("THẤT BẠI %1: %2/%3 mẫu nhất quán, cần %4 (cos với mẫu trung tâm: %5; loại dưới %6)")
+                            .arg(enrollId_)
+                            .arg(t.kept.size())
+                            .arg(enrollFeats_.size())
+                            .arg(cfg_.tmpl.minValid)
+                            .arg(cos, f2(cfg_.tmpl.outlierCosMin)),
+              EventLog::Fail);
     return;
   }
   const std::string id = enrollId_.toStdString();
@@ -312,16 +434,31 @@ void MainWindow::finishEnroll() {
     enrollMsg_->setText(QStringLiteral("TỪ CHỐI: bàn tay này đã đăng ký với ID '%1' (cos %2). Mỗi người chỉ đăng ký một lần.")
                             .arg(QString::fromStdString(dup[0].id)).arg(dup[0].score, 0, 'f', 3));
     enrollMsg_->setStyleSheet("color:#e74c3c;");
+    log_->add("ENROLL", QStringLiteral("TỪ CHỐI %1: trùng người đã đăng ký %2 (cos %3 > %4)")
+                            .arg(enrollId_, QString::fromStdString(dup[0].id), f3(dup[0].score), f2(cfg_.dupCosMax)),
+              EventLog::Fail);
     return;
   }
+  const bool replaced = gallery_.contains(id);
   gallery_.upsert({id, static_cast<int>(t.kept.size()), t.tmpl});
   try {
     gallery_.save(cfg_.galleryPath);
   } catch (const std::exception& e) {
     enrollMsg_->setText(QStringLiteral("Lỗi lưu gallery: %1").arg(e.what()));
     enrollMsg_->setStyleSheet("color:#e74c3c;");
+    log_->add("ENROLL", QStringLiteral("THẤT BẠI %1: không lưu được gallery: %2").arg(enrollId_, e.what()), EventLog::Fail);
     return;
   }
+  log_->add("ENROLL", QStringLiteral("THÀNH CÔNG %1%2: %3/%4 mẫu, cos với mẫu trung tâm %5 | %6")
+                          .arg(enrollId_, replaced ? QStringLiteral(" (thay mẫu cũ)") : QString())
+                          .arg(t.kept.size())
+                          .arg(enrollFeats_.size())
+                          .arg(cos,
+                               dup.empty() ? QStringLiteral("chưa có người khác")
+                                           : QStringLiteral("gần nhất người khác %1 cos %2 (ngưỡng trùng %3)")
+                                                 .arg(QString::fromStdString(dup[0].id), f3(dup[0].score),
+                                                      f2(cfg_.dupCosMax))),
+            EventLog::Ok);
   enrollMsg_->setText(QStringLiteral("THÀNH CÔNG: đã đăng ký tay phải của '%1' (%2/%3 mẫu).")
                           .arg(enrollId_).arg(t.kept.size()).arg(enrollFeats_.size()));
   enrollMsg_->setStyleSheet("color:#2ecc71;");
@@ -344,6 +481,20 @@ void MainWindow::identify(const FrameResult& r) {
     streak_ = accept ? 1 : 0;
     lastId_ = accept ? id : QString();
   }
+  const int confirm = cfg_.session.identifyConfirm;
+  // EE-PRnet gives no probability: its confidence is the cosine to the best
+  // match, and the gap to the second best
+  QString line = QStringLiteral("%1 cos %2").arg(id, f3(m[0].score));
+  if (m.size() > 1)
+    line += QStringLiteral(" | thứ 2 %1 cos %2 (cách %3)")
+                .arg(QString::fromStdString(m[1].id), f3(m[1].score), f3(m[0].score - m[1].score));
+  line += accept ? QStringLiteral(" | ĐẠT %1/%2").arg(std::min(streak_, confirm)).arg(confirm)
+                 : QStringLiteral(" | DƯỚI NGƯỠNG %1").arg(f2(cfg_.acceptCosMin));
+  line += QStringLiteral(" | %1 | embed %2 ms").arg(detectText(r)).arg(r.msEmbed, 0, 'f', 0);
+  log_->add("ID", line, accept ? EventLog::Info : EventLog::Warn);
+  if (accept && streak_ == confirm)
+    log_->add("ID", QStringLiteral("XÁC NHẬN: xin chào %1 (cos %2, %3 khung liên tiếp)").arg(id, f3(m[0].score)).arg(confirm),
+              EventLog::Ok);
   const QString detail = QStringLiteral("cos %1 (ngưỡng %2)").arg(m[0].score, 0, 'f', 3).arg(cfg_.acceptCosMin, 0, 'f', 2);
   if (accept && streak_ >= cfg_.session.identifyConfirm) {
     result_->setText(resultHtml(id, detail, kGreen));
@@ -367,14 +518,7 @@ void MainWindow::refreshList() {
   }
 }
 
-QString MainWindow::nextFreeId() const {
-  for (int i = 1;; ++i) {
-    const QString id = QStringLiteral("user_%1").arg(i, 2, 10, QLatin1Char('0'));
-    const auto& es = gallery_.entries();
-    if (std::none_of(es.begin(), es.end(), [&](const palm::GalleryEntry& e) { return e.id == id.toStdString(); }))
-      return id;
-  }
-}
+QString MainWindow::nextFreeId() const { return QString::fromStdString(gallery_.nextId()); }
 
 void MainWindow::deleteSelected() {
   const QListWidgetItem* item = list_->currentItem();
@@ -385,7 +529,9 @@ void MainWindow::deleteSelected() {
   gallery_.remove(id.toStdString());
   try {
     gallery_.save(cfg_.galleryPath);
+    log_->add("APP", QStringLiteral("đã xóa %1, còn %2 người").arg(id).arg(gallery_.entries().size()));
   } catch (const std::exception& e) {
+    log_->add("APP", QStringLiteral("xóa %1: không lưu được gallery: %2").arg(id, e.what()), EventLog::Fail);
     QMessageBox::warning(this, QStringLiteral("Lỗi"), QString::fromStdString(e.what()));
   }
   refreshList();

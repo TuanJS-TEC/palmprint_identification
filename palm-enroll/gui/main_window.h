@@ -5,6 +5,7 @@
 
 #include "camera_worker.h"
 #include "config.h"
+#include "event_log.h"
 #include "gallery.h"
 
 class QLabel;
@@ -18,7 +19,8 @@ class VideoView;
 class MainWindow : public QMainWindow {
   Q_OBJECT
  public:
-  MainWindow(const palm::Config& cfg, const std::string& source, bool mirrorSource);
+  // logPath: event log file (empty: log panel only)
+  MainWindow(const palm::Config& cfg, const std::string& source, bool mirrorSource, const QString& logPath);
   ~MainWindow() override;
 
   void beginEnroll(const QString& id);  // as if typed and clicked
@@ -45,6 +47,7 @@ class MainWindow : public QMainWindow {
   void identify(const FrameResult& r);
   void refreshList();
   QString nextFreeId() const;
+  void logFrame(const FrameResult& r);  // hand state changes + periodic timing summary
 
   palm::Config cfg_;
   palm::Gallery gallery_;
@@ -61,15 +64,21 @@ class MainWindow : public QMainWindow {
   QString lastId_;
   int streak_ = 0;
   QElapsedTimer lastEmbedClock_;
+  // log
+  int loggedState_ = -1;  // palm::HandState of the last HAND line
+  QElapsedTimer handLogClock_, perfClock_;
+  int perfFrames_ = 0, perfEmbeds_ = 0;
+  double perfDetectMs_ = 0, perfEmbedMs_ = 0;
 
   VideoView* video_;
   QLabel* status_;
   QLineEdit* idEdit_;
-  QPushButton *enrollBtn_, *cancelBtn_, *identifyBtn_, *deleteBtn_;
+  QPushButton *enrollBtn_, *cancelBtn_, *identifyBtn_, *deleteBtn_, *logBtn_;
   QProgressBar* progress_;
   std::vector<QLabel*> thumbs_;
   QLabel* enrollMsg_;
   QLabel* result_;
   QLabel *roiView_, *cropView_;
   QListWidget* list_;
+  EventLog* log_;
 };

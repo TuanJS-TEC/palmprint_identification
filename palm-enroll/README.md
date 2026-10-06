@@ -16,6 +16,9 @@ Hướng dẫn cho người test nằm trong `binary/README.txt`. Mỗi khung h�
 - `--source ảnh|video [--mirrored]`: dùng ảnh hoặc video thay camera.
 - `--enroll ID` / `--identify`: vào thẳng chế độ đăng ký hoặc nhận dạng.
 - `--verbose`: in thời gian xử lý mỗi giây.
+- `--log FILE`: file log sự kiện, mặc định `palm_gui.log` cạnh `config.yaml`; `--log ""` chỉ hiện trên màn hình.
+
+Khung log dưới video (F2 ẩn/hiện) ghi: trạng thái tay khi đổi kèm độ tin cậy của hai model MediaPipe (`palm` điểm phát hiện lòng bàn tay, `pres` có bàn tay, `right` xác suất tay phải, độ nét), từng mẫu đăng ký (cos với các mẫu trước, người khác gần nhất), từng lần nhận dạng (ID gần nhất và cos, người thứ hai và khoảng cách, đạt/không đạt ngưỡng), kết quả đăng ký/nhận dạng và thời gian xử lý mỗi 30 s. EE-PRnet không cho xác suất, nên độ tin cậy của nó là cos: trên đường xử lý camera, ảnh đúng người có trung vị 0.95, người khác trung vị 0.55 và 99% dưới 0.76 (`eval/report_live_path.txt`). Log được ghi cả vào file (xoay vòng sang `.1` ở 10 MB).
 
 Trên máy dev, chạy liên tục có tay: phát hiện tay 22 ms, embedding 32 ms, khoảng 18 fps. Không có tay: khoảng 26 fps.
 
@@ -45,11 +48,55 @@ Mỗi người chỉ đăng ký **một tay, là tay phải**. `enroll` và `ide
 ./build/palm_cli embed    --out-dir out img.jpg               # .f32 (512 float) + ROI 112x112 .png
 ./build/palm_cli list | remove --id P01
 
+# qua C API, trên khung hình camera đầy đủ (--mirrored cho ảnh lật gương như output/original)
+./build/palm_cli register [--mirrored] f1.jpg ... f5.jpg      # -> OK user_0003 | ALREADY_REGISTERED user_0001
+./build/palm_cli check    [--mirrored] frame.jpg              # -> user_0001 | palm not recognised
+
 # kiểm tra bộ phát hiện tay trên ảnh gốc có nhãn (nhãn, phía lòng bàn tay, landmark ra CSV)
 ./build/palm_handcheck --labels ../log_label.csv --images ../output/original --mirrored [--out hands.csv]
 ```
 
-`enroll` từ chối khi: ID đã đăng ký (dùng `--force` để thay template), hoặc template khớp một người khác trên `dup_cos_max`, tức cùng bàn tay đăng ký dưới hai tên. Mọi lệnh nhận `--config`, mặc định là `config.yaml` trong thư mục hiện tại.
+`enroll` từ chối khi: ID đã đăng ký (dùng `--force` để thay template), hoặc template khớp một người khác trên `dup_cos_max`, tức cùng bàn tay đăng ký dưới hai tên. Mọi lệnh nhận `--config`, mặc định là `config.yaml` trong thư mục hiện tại, và `--gallery PATH` để dùng gallery khác với gallery trong config.
+
+## API C (`src/palm_api.h`)
+
+Dùng cho ứng dụng khác gọi vào, ví dụ app Android qua JNI. Đầu vào là byte của khung hình camera; phát hiện tay, kiểm tra tay phải và crop đều làm bên trong. Các hàm chính:
+
+| Hàm | Việc |
+| --- | --- |
+| `palm_init(&opt, &h)` / `palm_release(h)` | Nạp 3 model ONNX và gallery. `opt.config_path` là `config.yaml`, hoặc NULL kèm 3 đường dẫn model và `gallery_path` (khi đó dùng ngưỡng đo ngày 2026-10-05) |
+| `palm_extract(h, &frame, feat, 512)` | Khung hình → vector 512 chiều đã chuẩn hóa L2 |
+| `palm_compare(h, a, b, 512, &score, &same)` | Cosine của 2 vector, `same = score >= accept_cos_min` |
+| `palm_register(h, frames, n, id, 64, &score, status)` | **Register**: đăng ký người mới, trả ID `user_0001`, `user_0002`, ... |
+| `palm_check_register(h, &frame, id, 64, &score)` | **Check_Register**: nhận dạng 1:N, trả ID hoặc `PALM_ERR_NOT_RECOGNIZED` |
+
+```c
+PalmInitOptions opt = {0};
+opt.config_path = "config.yaml";
+PalmHandle h;
+if (palm_init(&opt, &h) != PALM_OK) { puts(palm_last_error(NULL)); return; }
+PalmFrame f = {rgba, rgba_bytes, width, height, row_stride, PALM_FMT_RGBA, rotation_degrees, 0};
+char id[PALM_ID_MAX];
+float score;
+int s = palm_check_register(h, &f, id, sizeof id, &score);
+if (s == PALM_OK) printf("xin chào %s\n", id); else printf("%s\n", palm_status_text(s));
+palm_release(h);
+```
+
+Quy ước:
+- Mọi hàm trả mã `PalmStatus` (0 là OK) và không ném exception. Con trỏ bắt buộc mà NULL thì trả `PALM_ERR_ARGUMENT`; output tùy chọn (`score`, `same`, `frame_status`) được phép NULL. `palm_release(NULL)` không làm gì.
+- Buffer `id` phải có ít nhất `PALM_ID_MAX` (64) byte và truyền độ dài vào. ID không bao giờ bị cắt ngắn. Khi lỗi, `id` là chuỗi rỗng, trừ `PALM_ERR_ALREADY_REGISTERED` (khi đó `id` là ID đã đăng ký).
+- `PalmFrame`: `size` là số byte đọc được và được kiểm tra với `width`/`height`/`stride`/`format` để không đọc vượt buffer. Định dạng hỗ trợ: BGR, RGB, BGRA, RGBA, NV21 (cạnh phải chẵn). `rotation` là số độ xoay theo chiều kim đồng hồ để ảnh thẳng đứng, đúng nghĩa `ImageInfo.getRotationDegrees()` của Android. `mirrored = 1` chỉ dùng cho ảnh đã lật gương (ảnh xem trước selfie); buffer camera, kể cả camera trước, đều không lật.
+- `palm_register` nhận 1..32 khung hình, nên dùng 5 khung chụp cách nhau khoảng 0.7 s và nghiêng tay giữa các lần chụp. Cần ít nhất `template.min_valid` khung hợp lệ và nhất quán. Nếu bàn tay khớp một người đã đăng ký (trên `dup_cos_max`) thì trả `PALM_ERR_ALREADY_REGISTERED`. `frame_status` (NULL hoặc mảng ≥ n phần tử) cho biết lý do từng khung bị loại.
+- `palm_check_register` chỉ xét 1 khung hình; khoảng 16% khung đơn của người đã đăng ký bị từ chối ở ngưỡng 0.82. Khi đăng nhập, nên thử vài khung liên tiếp và yêu cầu vài lần OK cùng một ID. Khi không nhận ra, hàm không tiết lộ ID gần nhất.
+- Mỗi handle có mutex riêng nên gọi từ nhiều thread vẫn an toàn (các lệnh chạy tuần tự). Chuỗi từ `palm_last_error(h)` chỉ hợp lệ đến lần gọi kế tiếp trên `h`.
+- Gallery được nạp lại khi file thay đổi (`palm_gui`/`palm_cli` cùng ghi). Nếu file không đọc được: check tiếp tục dùng bản trong RAM, còn register trả `PALM_ERR_IO` để không ghi đè. Không có khóa giữa các process: hai process cùng đăng ký một lúc thì bên ghi sau thắng.
+
+Mã lỗi: `ARGUMENT` 1, `INIT` 2, `IO` 3, `INTERNAL` 4; khung hình không dùng được: `NO_HAND` 10, `LEFT_HAND` 11, `BACK_OF_HAND` 12, `HAND_TOO_SMALL` 13, `HAND_OUT_OF_FRAME` 14, `BLURRY` 15; register: `TOO_FEW_SAMPLES` 20, `ALREADY_REGISTERED` 21; check: `GALLERY_EMPTY` 30, `NOT_RECOGNIZED` 31. `palm_status_text()` trả mô tả tiếng Anh.
+
+ID tự sinh lớn hơn mọi `user_<số>` từng có trong gallery, kể cả người đã xóa, nên không bao giờ cấp lại ID cũ; bộ đếm được lưu trong file. Nếu lưu gallery lỗi (`PALM_ERR_IO`), số ID vừa sinh bị bỏ trống, giống auto-increment của CSDL.
+
+Build `.so` cho Android (chưa làm): thêm `add_library(palm_android SHARED src/palm_api.cpp ...)` build bằng toolchain NDK, cùng OpenCV Android SDK và ONNX Runtime AAR, rồi viết wrapper JNI gọi các hàm trên. Model phải được chép từ assets ra thư mục file của app để có đường dẫn.
 
 ## Quy ước đã chốt
 
@@ -93,6 +140,7 @@ Lưu ý:
 - Dùng một ONNX duy nhất thay cho `theta.onnx`, `embed.onnx` và `tps_T.bin`, vì TPS và sampler đã nằm trong graph.
 - Không dùng yaml-cpp, Catch2, Eigen, SQLite hay libsodium (máy chưa cài). Thay vào đó: `cv::FileStorage` cho YAML, test tự viết chạy bằng CTest, `std::vector` cho vector đặc trưng.
 - `gallery.bin` là file nhị phân **chưa mã hóa**. Phải thêm mã hóa (libsodium) trước khi chạy với dữ liệu thật.
+- Định dạng gallery hiện là `PALMGAL2` (thêm bộ đếm ID). Vẫn đọc được file `PALMGAL1` cũ, nhưng chương trình cũ không đọc được file mới, nên cần `cmake --install` lại vào `binary/`.
 
 ## Chưa làm
 

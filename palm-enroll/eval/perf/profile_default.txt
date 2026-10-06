@@ -1,0 +1,23 @@
+palm_profile  model threads 4  detector threads 2  gallery 1000
+frames 405 measured (warm-up 5), 319 passed the live checks
+step-by-step EE-PRnet vs PalmModel::run: max |feature diff| 0 over 3 frames
+
+  step                                              n      mean       p50       p95       p99       max   (ms)
+  detect: HandDetector::detect (total)            405    24.240    24.102    30.242    33.851    37.066
+  detect: palm input letterbox+RGB+float          405     0.187     0.185     0.210     0.238     0.311
+  detect: palm detector Session::Run              405     7.662     7.651     7.950     8.279    10.492
+  detect: landmark model Session::Run             403     4.125     4.112     4.393     4.989     5.229
+  checks: checkHand (box, side, sharpness)        405     1.160     1.323     1.956     2.339     2.617
+  crop: hand box view                             319     0.001     0.001     0.001     0.001     0.002
+  vector: BGR->RGB + uint8->float                 319     1.235     1.209     1.990     2.387     2.436
+  vector: vl resize 56x56                         319     1.015     0.995     1.559     1.862     2.019
+  vector: vl resize 224x224                       319     2.201     2.174     3.010     3.369     3.603
+  vector: HWC->CHW packing (both inputs)          319     0.161     0.159     0.173     0.189     0.240
+  vector: EE-PRnet Session::Run                   319    28.941    28.007    39.158    40.178    41.168
+  vector: output copy (feature, theta, roi)       319     0.033     0.032     0.045     0.053     0.066
+  vector: L2 normalise                            319     0.002     0.002     0.002     0.003     0.015
+  match: gallery search                           319     0.874     0.881     0.905     0.915     0.943
+  all three networks' Session::Run                319    40.751    39.773    50.865    51.775    52.952
+  frame -> match (sum of the steps above)         319    59.326    59.008    70.048    73.184    75.858
+
+ORT profile (200 runs): /tmp/claude-1001/-home-admin-DMS-palmprint/a584cf62-d897-4f36-8441-23d349d70a9a/scratchpad/ee_prnet_prof_2026-10-06_08-32-48.json
