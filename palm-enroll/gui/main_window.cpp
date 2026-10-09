@@ -56,12 +56,16 @@ QString detectText(const FrameResult& r) {
   return s;
 }
 
-// Capture gate measurements of an enrollment sample, for calibrating the limits.
+// Capture gate measurements of a frame, for calibrating the limits: "xoay" is
+// the rotation in the image plane, "nghiêng" the palm plane's tilt out of it,
+// "lệch" the tilt difference to the closest sample of this enrollment.
 QString gateText(const FrameResult& r) {
   const palm::GateReport& g = r.gate;
-  return QStringLiteral("cỡ %1 sáng %2 sat %3 nghiêng %4° ngón %5 | %6 fps")
-      .arg(f2(g.palmFrac), f2(g.mean), f3(g.satFrac), f2(g.angleDeg), f2(g.fingerOpen))
-      .arg(r.fps, 0, 'f', 1);
+  QString s = QStringLiteral("cỡ %1 sáng %2 sat %3 xoay %4° nghiêng %5° ngón %6")
+                  .arg(f2(g.palmFrac), f2(g.mean), f3(g.satFrac), f2(g.angleDeg), QString::number(g.tiltDeg, 'f', 1),
+                       f2(g.fingerOpen));
+  if (g.poseSepDeg >= 0) s += QStringLiteral(" lệch %1°").arg(g.poseSepDeg, 0, 'f', 1);
+  return s + QStringLiteral(" | %1 fps").arg(r.fps, 0, 'f', 1);
 }
 
 }  // namespace
@@ -84,11 +88,23 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
                        .arg(cfg_.session.samples)
                        .arg(cfg_.tmpl.minValid)
                        .arg(cfg_.capture.blurMin, 0, 'f', 0));
+  log_->add("APP", QStringLiteral("tư thế: nghiêng <= %1° (mẫu đầu <= %2°), các mẫu lệch nhau >= %3° | sáng %4..%5")
+                       .arg(cfg_.gate.maxTiltDeg, 0, 'f', 0)
+                       .arg(cfg_.gate.frontalMaxDeg, 0, 'f', 0)
+                       .arg(cfg_.gate.minPoseSepDeg, 0, 'f', 0)
+                       .arg(cfg_.gate.minMean, 0, 'f', 0)
+                       .arg(cfg_.gate.maxMean, 0, 'f', 0));
   try {
     gallery_.load(cfg_.galleryPath);
     log_->add("APP", QStringLiteral("%1 người đã đăng ký, ID tự động kế tiếp %2")
                          .arg(gallery_.entries().size())
                          .arg(QString::fromStdString(gallery_.nextId())));
+    // gallery files before v3 hold one mean template per person, from a single tilt
+    const auto single = std::count_if(gallery_.entries().begin(), gallery_.entries().end(),
+                                      [](const palm::GalleryEntry& e) { return e.samples.size() == 1; });
+    if (single > 0)
+      log_->add("APP", QStringLiteral("%1 người chỉ có 1 mẫu (gallery cũ, một góc nghiêng): nên xóa và đăng ký lại").arg(single),
+                EventLog::Warn);
   } catch (const std::exception& e) {
     const std::string bak = cfg_.galleryPath + ".bak";
     std::error_code ec;
@@ -103,6 +119,7 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
 
   // ---- layout: video | panel
   video_ = new VideoView(cfg_.camera.displayMirror);
+  video_->setPoseLimits(cfg_.gate);
   auto* panel = new QWidget;
   panel->setFixedWidth(340);
   auto* pv = new QVBoxLayout(panel);
@@ -286,7 +303,7 @@ void MainWindow::startEnroll() {
   enrollFeats_.clear();
   for (auto* t : thumbs_) t->clear();
   progress_->setValue(0);
-  enrollMsg_->setText(QStringLiteral("Giơ tay PHẢI, lòng bàn tay hướng vào camera, xòe các ngón."));
+  enrollMsg_->setText(QStringLiteral("Giơ tay PHẢI, lòng bàn tay thẳng hướng vào camera, xòe các ngón."));
   enrollMsg_->setStyleSheet("");
   enrollClock_.start();
   setMode(Mode::Enroll);
@@ -329,15 +346,13 @@ void MainWindow::toggleIdentify(bool on) {
 }
 
 void MainWindow::logFrame(const FrameResult& r) {
-  // hand state changes, at most one line per 0.5 s (a hand at a limit flickers)
-  // enrollment logs the gate's status, the other modes the hand check's
-  const int st = r.gated ? 100 + static_cast<int>(r.gate.status) : static_cast<int>(r.check.state);
+  // gate status changes, at most one line per 0.5 s (a hand at a limit flickers)
+  const int st = static_cast<int>(r.gate.status);
   if (st != loggedState_ && (!handLogClock_.isValid() || handLogClock_.elapsed() >= 500)) {
     loggedState_ = st;
     handLogClock_.start();
-    const QString msg = r.gated ? QString::fromUtf8(palm::gateMessage(r.gate.status))
-                                : QString::fromUtf8(palm::stateMessage(r.check.state));
-    const QString measured = r.gated ? gateText(r) + " | " + detectText(r) : detectText(r);
+    const QString msg = QString::fromUtf8(palm::gateMessage(r.gate.status));
+    const QString measured = gateText(r) + " | " + detectText(r);
     log_->add("HAND", QStringLiteral("%1 | %2 | detect %3 ms").arg(msg, measured).arg(r.msDetect, 0, 'f', 0));
   }
   // timing summary every 30 s
@@ -416,7 +431,8 @@ void MainWindow::addEnrollSample(const FrameResult& r) {
     finishEnroll();
     return;
   }
-  enrollMsg_->setText(QStringLiteral("Đã chụp %1/%2. Xoay hoặc nghiêng nhẹ tay, rồi giữ yên.")
+  enrollMsg_->setText(QStringLiteral("Đã chụp %1/%2. Nghiêng nhẹ lòng bàn tay sang hướng khác (chấm trắng ra xa "
+                                     "các chấm đã chụp trên bản đồ góc), rồi giữ yên.")
                           .arg(enrollFeats_.size()).arg(cfg_.session.samples));
 }
 
@@ -440,7 +456,8 @@ void MainWindow::finishEnroll() {
     return;
   }
   const std::string id = enrollId_.toStdString();
-  const auto dup = gallery_.search(t.tmpl, 1, id);
+  const std::vector<palm::Vec> samples = palm::keptSamples(enrollFeats_, t);
+  const auto dup = gallery_.search(samples, 1, id);  // closest pair of samples
   if (!dup.empty() && dup[0].score > cfg_.dupCosMax) {
     enrollMsg_->setText(QStringLiteral("TỪ CHỐI: bàn tay này đã đăng ký với ID '%1' (cos %2). Mỗi người chỉ đăng ký một lần.")
                             .arg(QString::fromStdString(dup[0].id)).arg(dup[0].score, 0, 'f', 3));
@@ -451,7 +468,7 @@ void MainWindow::finishEnroll() {
     return;
   }
   const bool replaced = gallery_.contains(id);
-  gallery_.upsert({id, static_cast<int>(t.kept.size()), t.tmpl});
+  gallery_.upsert({id, samples});
   try {
     gallery_.save(cfg_.galleryPath);
   } catch (const std::exception& e) {
@@ -523,7 +540,7 @@ void MainWindow::identify(const FrameResult& r) {
 void MainWindow::refreshList() {
   list_->clear();
   for (const auto& e : gallery_.entries()) {
-    auto* item = new QListWidgetItem(QStringLiteral("%1   (%2 mẫu)").arg(QString::fromStdString(e.id)).arg(e.numSamples));
+    auto* item = new QListWidgetItem(QStringLiteral("%1   (%2 mẫu)").arg(QString::fromStdString(e.id)).arg(e.samples.size()));
     item->setData(Qt::UserRole, QString::fromStdString(e.id));
     list_->addItem(item);
   }

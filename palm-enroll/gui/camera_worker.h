@@ -21,8 +21,9 @@ struct FrameResult {
   double viewScale = 1.0;    // view pixels per camera pixel
   palm::HandLandmarks hand;  // camera pixels
   palm::HandCheck check;
-  bool gated = false;        // enrollment: the capture gate decides, see gate
+  bool gated = false;        // enrollment: Ready of the capture gate decides; else every frame it passes
   palm::GateReport gate;
+  std::vector<cv::Vec3f> taken;  // enrollment: palm normals of the samples taken so far
   bool embedded = false;
   std::vector<float> feat;   // L2-normalised fc1R feature
   QImage roi;                // 112x112 aligned palm ROI the recogniser saw
@@ -42,7 +43,8 @@ class CameraWorker : public QObject {
   void stop() { stop_ = true; }
   // -1: no embeddings, 0: every frame that passes the checks, > 0: at most one per interval
   void setEmbedInterval(int ms) { embedIntervalMs_ = ms; }
-  // true: embed only on frames the capture gate reports Ready (enrollment)
+  // true (enrollment): embed only on frames the capture gate reports Ready,
+  // each at a palm tilt not taken yet; false: on every frame the gate passes
   void setGated(bool g) { gated_ = g; }
   void setVerbose(bool v) { verbose_ = v; }  // timing summary on stderr every second
 

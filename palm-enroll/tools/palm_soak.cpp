@@ -249,7 +249,7 @@ Gallery syntheticGallery(const std::string& version, int dim, int n) {
   for (int i = 0; i < n; ++i) {
     Vec v(static_cast<size_t>(dim));
     for (auto& x : v) x = nd(rng);
-    g.upsert({"p" + std::to_string(i), 5, l2normalize(v)});
+    g.upsert({"p" + std::to_string(i), {l2normalize(v)}});
   }
   return g;
 }

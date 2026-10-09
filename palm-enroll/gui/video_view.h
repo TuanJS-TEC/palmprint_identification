@@ -13,6 +13,7 @@ class VideoView : public QWidget {
   void setFrame(const FrameResult& r);
   void setMessage(const QString& text) { message_ = text; update(); }  // shown when no frame
   void setBanner(const QString& text, const QColor& color);            // session status, bottom
+  void setPoseLimits(const palm::GateLimits& lim) { lim_ = lim; }       // scale of the tilt map
 
  protected:
   void paintEvent(QPaintEvent*) override;
@@ -20,6 +21,7 @@ class VideoView : public QWidget {
  private:
   FrameResult r_;
   bool mirror_;
+  palm::GateLimits lim_;
   QString message_, banner_;
   QColor bannerColor_;
 };

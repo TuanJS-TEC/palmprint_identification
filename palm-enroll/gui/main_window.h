@@ -65,7 +65,7 @@ class MainWindow : public QMainWindow {
   int streak_ = 0;
   QElapsedTimer lastEmbedClock_;
   // log
-  int loggedState_ = -1;  // palm::HandState of the last HAND line
+  int loggedState_ = -1;  // palm::GateStatus of the last HAND line
   QElapsedTimer handLogClock_, perfClock_;
   int perfFrames_ = 0, perfEmbeds_ = 0;
   double perfDetectMs_ = 0, perfEmbedMs_ = 0;

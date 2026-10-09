@@ -2,7 +2,8 @@
 // measure what the thresholds in config.yaml should be:
 //   - sample vs sample: genuine / impostor cosine distributions, EER
 //   - enrollment protocol: first --enroll samples of each palm (by timestamp)
-//     -> template, the rest are probes: rank-1, EER, FRR at fixed FAR
+//     are stored, the rest are probes scored against their closest stored
+//     sample (as the gallery matches): rank-1, EER, FRR at fixed FAR
 //   - per-image timing
 //
 // As in enrollment, only the physical right hand is used (rows whose
@@ -234,7 +235,7 @@ int main(int argc, char** argv) {
       }
       for (size_t k = 0; k < t.cosToMedoid.size(); ++k)
         if (static_cast<int>(k) != t.medoid) medoidCos.push_back(t.cosToMedoid[k]);
-      gallery.upsert({person, static_cast<int>(t.kept.size()), t.tmpl});
+      gallery.upsert({person, keptSamples(enr, t)});
       for (size_t k = enrollK; k < idx.size(); ++k) probes.emplace_back(idx[k], person);
     }
     std::vector<float> tGen, tImp;
@@ -245,7 +246,7 @@ int main(int argc, char** argv) {
       rank1 += all[0].id == truth;
       if (all[0].score >= cfg.acceptCosMin) (all[0].id == truth ? acceptOk : acceptWrong)++;
     }
-    std::printf("\n[enrollment: first %d samples -> template, rest are probes]\n", enrollK);
+    std::printf("\n[enrollment: first %d samples stored, rest are probes (score: closest sample)]\n", enrollK);
     std::printf("  gallery %zu people (%d with <= %d samples skipped, %d failed template: their probes not counted),"
                 " %zu probes\n",
                 gallery.entries().size(), skipped, enrollK, failed, probes.size());

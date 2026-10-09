@@ -16,7 +16,7 @@ constexpr int kPalmIn = 192, kHandIn = 224;
 constexpr float kScoreThr = 0.5f, kNmsThr = 0.3f, kPresenceThr = 0.8f;
 const char* kIn[] = {"input_1"};
 const char* kPalmOut[] = {"Identity", "Identity_1"};                            // [1,2016,18], [1,2016,1]
-const char* kHandOut[] = {"Identity", "Identity_1", "Identity_2"};              // landmarks, presence, handedness
+const char* kHandOut[] = {"Identity", "Identity_1", "Identity_2", "Identity_3"};  // landmarks, presence, handedness, world
 
 struct Palm {
   cv::Point2d p0, p1;               // box corners
@@ -179,8 +179,9 @@ struct HandDetector::Impl {
 
     const std::array<int64_t, 4> shape{1, kHandIn, kHandIn, 3};
     Ort::Value x = Ort::Value::CreateTensor<float>(mem, blob.ptr<float>(), blob.total() * 3, shape.data(), 4);
-    auto y = hand->Run(Ort::RunOptions{nullptr}, kIn, &x, 1, kHandOut, 3);
+    auto y = hand->Run(Ort::RunOptions{nullptr}, kIn, &x, 1, kHandOut, 4);
     const float* l = y[0].GetTensorData<float>();
+    const float* w = y[3].GetTensorData<float>();
     r.presence = y[1].GetTensorData<float>()[0];
     r.handedness = y[2].GetTensorData<float>()[0];
     if (r.presence < kPresenceThr) return r;
@@ -198,6 +199,11 @@ struct HandDetector::Impl {
       const double rx = lx * R.at<double>(0, 0) + ly * R.at<double>(1, 0);
       const double ry = lx * R.at<double>(0, 1) + ly * R.at<double>(1, 1);
       r.pts[k] = cv::Point2f(static_cast<float>(rx + oc.x + padBias.x), static_cast<float>(ry + oc.y + padBias.y));
+      // world landmarks get the same in-plane rotation back to the image axes (mp_handpose.py)
+      const double wx = w[3 * k], wy = w[3 * k + 1];
+      r.world[k] = cv::Point3f(static_cast<float>(wx * R.at<double>(0, 0) + wy * R.at<double>(1, 0)),
+                               static_cast<float>(wx * R.at<double>(0, 1) + wy * R.at<double>(1, 1)),
+                               w[3 * k + 2]);
     }
     r.found = true;
     return r;

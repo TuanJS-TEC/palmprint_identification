@@ -35,20 +35,38 @@ int main() {
 
   // gallery: search order, exclude, save/load round trip, version check
   Gallery g("test_v1", dim);
-  g.upsert({"a", 3, unit(dim, 0)});
-  g.upsert({"b", 3, unit(dim, 1)});
-  g.upsert({"a", 4, unit(dim, 2)});  // replaces
+  g.upsert({"a", {unit(dim, 0)}});
+  g.upsert({"b", {unit(dim, 1)}});
+  g.upsert({"a", {unit(dim, 2), unit(dim, 3)}});  // replaces
   CHECK(g.entries().size() == 2);
   auto m = g.search(unit(dim, 2, 0.05f), 2);
   CHECK(m.size() == 2 && m[0].id == "a" && m[0].score > m[1].score);
   CHECK(g.search(unit(dim, 2), 5, "a").size() == 1);
+  // an entry scores its closest sample, not a mean of its samples
+  m = g.search(unit(dim, 3), 1);
+  CHECK(m[0].id == "a" && std::fabs(m[0].score - 1.f) < 1e-5);
+  CHECK(std::fabs(bestScore(unit(dim, 2), g.entries()[0]) - 1.f) < 1e-5);
+  // several probes: the highest cosine over every probe / sample pair
+  m = g.search(std::vector<Vec>{unit(dim, 4), unit(dim, 1)}, 2);
+  CHECK(m.size() == 2 && m[0].id == "b" && std::fabs(m[0].score - 1.f) < 1e-5 && std::fabs(m[1].score) < 1e-5);
+  CHECK(g.search(std::vector<Vec>{unit(dim, 1)}, 5, "b").size() == 1);
+  // an entry needs samples of the gallery's dimension
+  for (const GalleryEntry& bad : {GalleryEntry{"c", {}}, GalleryEntry{"c", {unit(dim, 0), Vec(dim + 1, 0.f)}}}) {
+    bool threwBad = false;
+    try {
+      g.upsert(bad);
+    } catch (const std::invalid_argument&) {
+      threwBad = true;
+    }
+    CHECK(threwBad && !g.contains("c"));
+  }
 
   const auto path = (std::filesystem::temp_directory_path() / "palm_test_gallery.bin").string();
   g.save(path);
   Gallery h("test_v1", dim);
   h.load(path);
-  CHECK(h.entries().size() == 2 && h.entries()[0].id == "a" && h.entries()[0].numSamples == 4);
-  CHECK(h.entries()[1].tmpl == g.entries()[1].tmpl);
+  CHECK(h.entries().size() == 2 && h.entries()[0].id == "a" && h.entries()[0].samples.size() == 2);
+  CHECK(h.entries()[0].samples == g.entries()[0].samples && h.entries()[1].samples == g.entries()[1].samples);
   bool threw = false;
   try {
     Gallery("other_model", dim).load(path);
@@ -73,14 +91,14 @@ int main() {
   // automatic ids: increasing, a removed id is not given out again, counter saved
   Gallery s("test_v1", dim);
   CHECK(s.nextId() == "user_0001");
-  s.upsert({s.nextId(), 3, unit(dim, 0)});
-  s.upsert({s.nextId(), 3, unit(dim, 1)});
+  s.upsert({s.nextId(), {unit(dim, 0)}});
+  s.upsert({s.nextId(), {unit(dim, 1)}});
   CHECK(s.contains("user_0002") && s.nextId() == "user_0003");
   CHECK(s.remove("user_0002") && s.nextId() == "user_0003");
-  s.upsert({"admin", 3, unit(dim, 2)});
-  s.upsert({"user_12abc", 3, unit(dim, 3)});
+  s.upsert({"admin", {unit(dim, 2)}});
+  s.upsert({"user_12abc", {unit(dim, 3)}});
   CHECK(s.nextId() == "user_0003");
-  s.upsert({"user_7", 3, unit(dim, 4)});  // typed by hand: counter follows
+  s.upsert({"user_7", {unit(dim, 4)}});  // typed by hand: counter follows
   CHECK(s.nextId() == "user_0008");
   s.remove("user_7");
   s.save(path);
@@ -113,6 +131,29 @@ int main() {
   Gallery old("test_v1", dim);
   old.load(path);
   CHECK(old.entries().size() == 2 && old.entries()[1].id == "bob" && old.nextId() == "user_0006");
+  CHECK(old.entries()[1].samples.size() == 1 && old.entries()[1].samples[0] == unit(dim, 1));  // the mean template
+
+  // a v3 entry with a sample count of 0 is corrupt
+  {
+    std::ofstream v3(path, std::ios::binary | std::ios::trunc);
+    const auto u32 = [&](uint32_t v) { v3.write(reinterpret_cast<const char*>(&v), 4); };
+    v3.write("PALMGAL3", 8);
+    u32(7);
+    v3.write("test_v1", 7);
+    u32(dim);
+    u32(1);
+    u32(1);
+    u32(1);
+    v3.write("x", 1);
+    u32(0);
+  }
+  threw = false;
+  try {
+    old.load(path);
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  CHECK(threw && old.entries().size() == 2);
 
   // a corrupt file throws and leaves the gallery as it was
   { std::ofstream(path, std::ios::binary | std::ios::trunc) << "PALMGAL2 truncated"; }

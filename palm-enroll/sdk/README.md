@@ -118,7 +118,7 @@ Có thể dùng NV21 nếu đã có sẵn; chiều rộng và chiều cao phải
 
 **Đăng ký.**
 1. Với mỗi khung, gọi `palm_extract` để hiện lời nhắc theo mã trả về.
-2. Khi trả OK và đã cách lần giữ trước ≥ 0.7 s, **chép** buffer lại (phải chép trước `image.close()`). Nhắc người dùng nghiêng nhẹ tay giữa các lần.
+2. Khi trả OK và đã cách lần giữ trước ≥ 0.7 s, **chép** buffer lại (phải chép trước `image.close()`). Nhắc người dùng nghiêng nhẹ tay giữa các lần. API chưa kiểm tra góc nghiêng, nên app phải tự đảm bảo các khung khác góc nhau (xem README chính, mục "Góc nghiêng lòng bàn tay").
 3. Đủ 5 khung thì gọi `palm_register`. Mảng `frame_status` cho biết khung nào bị loại và vì sao.
 
 **Đăng nhập.** Gọi `palm_check_register` trên từng khung. Chỉ coi là thành công khi **3 khung liên tiếp** cùng trả OK với cùng một ID, vì khoảng 16% khung đơn của người đã đăng ký bị từ chối nhầm. Khi không nhận ra, hàm không tiết lộ ID gần nhất.
@@ -182,8 +182,8 @@ Muốn đổi ngưỡng thì chép `config.yaml` ra `filesDir`, sửa, rồi tru
 
 ## Gallery (CSDL)
 
-File nhị phân `PALMGAL2`, mỗi người lưu một vector 512 chiều.
+File nhị phân `PALMGAL3`, mỗi người lưu các mẫu đăng ký (mỗi mẫu là một vector 512 chiều). Điểm của một người là cos lớn nhất giữa vector cần so và các mẫu của người đó.
 - ID tự sinh tăng dần và không bao giờ dùng lại, kể cả của người đã xóa.
 - File được ghi atomic (ghi file tạm rồi đổi tên), nên không bao giờ bị đọc dở.
 - Gallery được nạp lại khi file thay đổi.
-- Nếu muốn CSDL nằm trên server: app chỉ cần `palm_extract`, gửi vector lên server, server so cosine với ngưỡng 0.82 (đăng nhập) và > 0.82 (chống đăng ký trùng).
+- Nếu muốn CSDL nằm trên server: app chỉ cần `palm_extract`, gửi vector lên server. Server lưu từng mẫu, so cosine với từng mẫu rồi lấy giá trị lớn nhất: ≥ 0.82 là đăng nhập được, > 0.82 (giữa bất kỳ cặp mẫu mới và mẫu đã lưu) là đăng ký trùng.

@@ -14,7 +14,10 @@ CHẠY
      xoay lòng bàn tay thẳng hơn, mở ngón tay, đổi vị trí nếu ngược sáng, ...).
   3. Khi đủ điều kiện, viền chuyển xanh và vòng tròn quanh khung chạy dần; giữ yên
      tay cho đến khi vòng đầy thì app tự chụp (màn hình nháy một lần). Chụp 5 mẫu,
-     cách nhau 0.7 giây; giữa các mẫu nghiêng/xoay nhẹ tay.
+     mỗi mẫu ở một góc nghiêng khác. Bản đồ góc (góc phải trên): chấm trắng là
+     hướng lòng bàn tay lúc này, tâm là thẳng vào camera. Mẫu đầu: đưa chấm trắng
+     vào vòng nét đứt. Mẫu sau: nghiêng nhẹ tay để chấm trắng ra ngoài các vùng
+     xanh (mẫu đã chụp) nhưng vẫn trong vòng ngoài.
   4. Đăng ký lại cùng ID: app hỏi có thay mẫu cũ không. Cùng một bàn tay dưới
      ID khác: bị từ chối.
 

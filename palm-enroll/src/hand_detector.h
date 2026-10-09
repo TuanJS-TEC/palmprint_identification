@@ -19,6 +19,10 @@ struct HandLandmarks {
   float handedness = 0.f;  // model output, > 0.5 means MediaPipe label "Right"
   cv::Rect2f palmBox;      // palm detector box, pixels
   std::array<cv::Point2f, 21> pts{};  // landmarks, pixels of the input image
+  // Metric 3D landmarks (metres, origin near the hand centre), rotated to the
+  // image axes: x right, y down, z away from the camera (MediaPipe: smaller z
+  // is closer). Only their directions are used (palm plane, capture_gate.h).
+  std::array<cv::Point3f, 21> world{};
 
   // How the hand looks in the given image: on a non-mirrored camera frame this
   // is the physical hand (palm_handcheck on the capture log). The capture

@@ -57,6 +57,12 @@ TemplateResult buildTemplate(const std::vector<Vec>& feats, const TemplateParams
   return r;
 }
 
+std::vector<Vec> keptSamples(const std::vector<Vec>& feats, const TemplateResult& t) {
+  std::vector<Vec> out;
+  for (int i : t.kept) out.push_back(feats.at(i));
+  return out;
+}
+
 bool parseUserSeq(const std::string& id, uint32_t& n) {
   constexpr std::string_view kPrefix = "user_";
   if (id.size() <= kPrefix.size() || id.size() > kPrefix.size() + 9 || id.compare(0, kPrefix.size(), kPrefix) != 0)
@@ -73,10 +79,13 @@ bool parseUserSeq(const std::string& id, uint32_t& n) {
 
 // ---------------------------------------------------------------- storage
 namespace {
-// v1: magic, model version, dim, count, entries
-// v2: magic, model version, dim, next id sequence, count, entries
+// v1: magic, model version, dim, count, entries (id, sample count, mean template)
+// v2: magic, model version, dim, next id sequence, count, entries as v1
+// v3: magic, model version, dim, next id sequence, count, entries (id, n, n samples)
 constexpr char kMagicV1[8] = {'P', 'A', 'L', 'M', 'G', 'A', 'L', '1'};
 constexpr char kMagicV2[8] = {'P', 'A', 'L', 'M', 'G', 'A', 'L', '2'};
+constexpr char kMagicV3[8] = {'P', 'A', 'L', 'M', 'G', 'A', 'L', '3'};
+constexpr uint32_t kMaxSamples = 1024;  // per entry; larger counts mean a corrupt file
 
 void bumpSeq(uint32_t& seq, const std::string& id) {
   uint32_t n = 0;
@@ -112,11 +121,12 @@ void Gallery::load(const std::string& path) {
   // parsed into locals: a corrupt file leaves the gallery as it was
   char magic[8];
   f.read(magic, sizeof magic);
-  const bool v1 = f && std::equal(magic, magic + 8, kMagicV1), v2 = f && std::equal(magic, magic + 8, kMagicV2);
-  if (!v1 && !v2) throw std::runtime_error("gallery: not a palm gallery file: " + path);
+  const bool v1 = f && std::equal(magic, magic + 8, kMagicV1), v2 = f && std::equal(magic, magic + 8, kMagicV2),
+             v3 = f && std::equal(magic, magic + 8, kMagicV3);
+  if (!v1 && !v2 && !v3) throw std::runtime_error("gallery: not a palm gallery file: " + path);
   const std::string version = getStr(f);
   const int dim = static_cast<int>(getU32(f));
-  uint32_t seq = v2 ? getU32(f) : 1;
+  uint32_t seq = v1 ? 1 : getU32(f);
   const uint32_t count = getU32(f);
   if (!f) throw std::runtime_error("gallery: truncated file: " + path);
   if (version != modelVersion_ || dim != dim_)
@@ -126,9 +136,13 @@ void Gallery::load(const std::string& path) {
   for (uint32_t k = 0; k < count; ++k) {
     GalleryEntry e;
     e.id = getStr(f);
-    e.numSamples = static_cast<int>(getU32(f));
-    e.tmpl.resize(dim_);
-    f.read(reinterpret_cast<char*>(e.tmpl.data()), static_cast<std::streamsize>(dim_ * sizeof(float)));
+    const uint32_t n = getU32(f);
+    if (!f || (v3 && (n == 0 || n > kMaxSamples))) throw std::runtime_error("gallery: corrupt sample count: " + path);
+    e.samples.resize(v3 ? n : 1);  // v1/v2: n is the enrollment count, one mean template follows
+    for (Vec& v : e.samples) {
+      v.resize(dim_);
+      f.read(reinterpret_cast<char*>(v.data()), static_cast<std::streamsize>(dim_ * sizeof(float)));
+    }
     if (!f) throw std::runtime_error("gallery: truncated file: " + path);
     bumpSeq(seq, e.id);
     entries.push_back(std::move(e));
@@ -147,15 +161,16 @@ void Gallery::save(const std::string& path) const {
   const std::string tmp = path + suffix;
   try {
     std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-    f.write(kMagicV2, sizeof kMagicV2);
+    f.write(kMagicV3, sizeof kMagicV3);
     putStr(f, modelVersion_);
     putU32(f, static_cast<uint32_t>(dim_));
     putU32(f, nextSeq_);
     putU32(f, static_cast<uint32_t>(entries_.size()));
     for (const auto& e : entries_) {
       putStr(f, e.id);
-      putU32(f, static_cast<uint32_t>(e.numSamples));
-      f.write(reinterpret_cast<const char*>(e.tmpl.data()), static_cast<std::streamsize>(dim_ * sizeof(float)));
+      putU32(f, static_cast<uint32_t>(e.samples.size()));
+      for (const Vec& v : e.samples)
+        f.write(reinterpret_cast<const char*>(v.data()), static_cast<std::streamsize>(dim_ * sizeof(float)));
     }
     f.close();  // flush errors show up here, before the rename
     if (!f) throw std::runtime_error("gallery: cannot write " + tmp);
@@ -178,7 +193,10 @@ std::string Gallery::nextId() const {
 }
 
 void Gallery::upsert(GalleryEntry e) {
-  if (static_cast<int>(e.tmpl.size()) != dim_) throw std::invalid_argument("gallery: template dimension mismatch");
+  if (e.samples.empty() || e.samples.size() > kMaxSamples)
+    throw std::invalid_argument("gallery: an entry needs 1.." + std::to_string(kMaxSamples) + " samples");
+  for (const Vec& v : e.samples)
+    if (static_cast<int>(v.size()) != dim_) throw std::invalid_argument("gallery: sample dimension mismatch");
   bumpSeq(nextSeq_, e.id);
   for (auto& x : entries_)
     if (x.id == e.id) {
@@ -195,12 +213,36 @@ bool Gallery::remove(const std::string& id) {
   return found;
 }
 
+float bestScore(const Vec& probe, const GalleryEntry& e) {
+  float best = -2.f;  // below any cosine
+  for (const Vec& v : e.samples) best = std::max(best, dot(probe, v));
+  return best;
+}
+
+namespace {
+void sortTop(std::vector<Match>& m, int topK) {
+  std::sort(m.begin(), m.end(), [](const Match& a, const Match& b) { return a.score > b.score; });
+  if (static_cast<int>(m.size()) > topK) m.resize(std::max(0, topK));
+}
+}  // namespace
+
 std::vector<Match> Gallery::search(const Vec& probe, int topK, const std::string& excludeId) const {
   std::vector<Match> m;
   for (const auto& e : entries_)
-    if (e.id != excludeId) m.push_back({e.id, dot(probe, e.tmpl)});
-  std::sort(m.begin(), m.end(), [](const Match& a, const Match& b) { return a.score > b.score; });
-  if (static_cast<int>(m.size()) > topK) m.resize(topK);
+    if (e.id != excludeId) m.push_back({e.id, bestScore(probe, e)});
+  sortTop(m, topK);
+  return m;
+}
+
+std::vector<Match> Gallery::search(const std::vector<Vec>& probes, int topK, const std::string& excludeId) const {
+  std::vector<Match> m;
+  for (const auto& e : entries_) {
+    if (e.id == excludeId) continue;
+    float best = -2.f;
+    for (const Vec& p : probes) best = std::max(best, bestScore(p, e));
+    m.push_back({e.id, best});
+  }
+  sortTop(m, topK);
   return m;
 }
 

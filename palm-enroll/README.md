@@ -132,19 +132,42 @@ Lật ảnh tay phải làm kết quả kém đi: EER 10.6%, rank-1 86.6%. Ngư�
 - Như vậy tương đương khi dùng `hand_crop`.
 
 Lưu ý:
-- Năm mẫu chụp liên tiếp trong vài giây gần như trùng nhau (cos > 0.99), nên template ít đa dạng. `palm_gui` chụp cách nhau 0.7 s và nhắc nghiêng tay giữa các lần chụp.
+- Các số trên đo với template trung bình của 5 mẫu đầu và chưa giới hạn góc nghiêng (trước 2026-10-09). Xem mục "Góc nghiêng lòng bàn tay" bên dưới.
 - Có ROI hỏng: người 22 bị mờ, người 24 trông như da mặt (xem `eval/rois.jpg`). `palm_gui` loại ảnh mờ (`blur_min`), ảnh rung và bàn tay nằm ngoài khung.
+
+## Góc nghiêng lòng bàn tay
+
+Đặc trưng EE-PRnet của cùng một bàn tay thay đổi theo góc nghiêng **ra khỏi mặt phẳng ảnh**. Xoay trong mặt phẳng ảnh thì gần như không ảnh hưởng (xoay 30° vẫn cho cos 0.96). Đo trên `output/original` (324 ảnh tay phải, 24 người), góc nghiêng lấy từ pháp tuyến lòng bàn tay của world landmarks MediaPipe, nhiễu đo khoảng 2–5°:
+
+| Lệch góc giữa 2 ảnh | cos cùng người (trung vị) | tỷ lệ < 0.82 |
+|---|---|---|
+| 0–5° | 0.976 | 4% |
+| 5–10° | 0.915 | 21% |
+| 10–15° | 0.855 | 29% |
+| 15–20° | 0.751 | 79% |
+| 20–30° | 0.736 | 99% |
+
+Người khác nhau: trung vị 0.535, p99 0.746. Hệ quả là cùng một người đăng ký ở các góc khác nhau thì không bị coi là trùng: đã xảy ra với user_0008..0014 ngày 2026-10-09, cos giữa các template chỉ 0.29–0.81.
+
+Cách xử lý hiện tại:
+- Cổng chụp đo góc nghiêng (`capture.max_tilt_deg`, 25°) và áp dụng cho cả đăng ký lẫn nhận dạng. Trên tập trên, giới hạn này đưa EER từ 9.8% xuống 2.3–2.9%.
+- Đăng ký: mẫu đầu phải gần thẳng (`frontal_max_deg`). Mỗi mẫu sau phải lệch ít nhất `min_pose_sep_deg` so với mọi mẫu đã chụp. `palm_gui` hiện một bản đồ góc ở góc phải trên để hướng dẫn.
+- Gallery lưu **từng mẫu** (`PALMGAL3`) thay vì vector trung bình. Nhận dạng lấy cos lớn nhất với các mẫu của mỗi người; kiểm tra trùng lấy cos lớn nhất giữa mọi cặp (mẫu mới, mẫu đã lưu).
+- Khoảng sáng được thu hẹp còn 70..160.
+
+Ngưỡng 0.82 chưa đo lại cho cách khớp theo mẫu trên dữ liệu đa góc, vì chưa có dữ liệu như vậy. `frontal_max_deg`, `min_pose_sep_deg` và khoảng sáng mới chỉ là ước lượng: hiệu chỉnh theo các dòng HAND/ENROLL trong log (`nghiêng`, `lệch`, `sáng`). C API (`palm_register`) đã lưu từng mẫu, nhưng **chưa** kiểm tra góc nghiêng của các khung nhận vào.
 
 ## Khác với tài liệu hướng dẫn
 
 - Dùng một ONNX duy nhất thay cho `theta.onnx`, `embed.onnx` và `tps_T.bin`, vì TPS và sampler đã nằm trong graph.
 - Không dùng yaml-cpp, Catch2, Eigen, SQLite hay libsodium (máy chưa cài). Thay vào đó: `cv::FileStorage` cho YAML, test tự viết chạy bằng CTest, `std::vector` cho vector đặc trưng.
 - `gallery.bin` là file nhị phân **chưa mã hóa**. Phải thêm mã hóa (libsodium) trước khi chạy với dữ liệu thật.
-- Định dạng gallery hiện là `PALMGAL2` (thêm bộ đếm ID). Vẫn đọc được file `PALMGAL1` cũ, nhưng chương trình cũ không đọc được file mới, nên cần `cmake --install` lại vào `binary/`.
+- Định dạng gallery hiện là `PALMGAL3` (lưu từng mẫu của mỗi người). Vẫn đọc được file `PALMGAL1`/`PALMGAL2` cũ, mỗi người cũ được nạp thành 1 mẫu (template trung bình); nên xóa và đăng ký lại những người này. Chương trình cũ không đọc được file mới, nên cần `cmake --install` lại vào `binary/`.
 
 ## Chưa làm
 
 - Mã hóa gallery.
 - Liveness.
-- Buộc các mẫu đăng ký phải khác tư thế nhau: hiện chỉ có nhắc nhở và khoảng cách thời gian giữa hai lần chụp.
+- Kiểm tra góc nghiêng trong C API (`palm_register`, `palm_check_register`).
+- Đo lại `accept_cos_min`/`dup_cos_max` cho cách khớp theo mẫu, trên dữ liệu đăng ký đa góc.
 - Đo các ngưỡng `max_motion` và `min_crop_frac` trên camera thật: hiện mới là giá trị khởi đầu.

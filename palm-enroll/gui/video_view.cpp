@@ -9,15 +9,6 @@ const int kBones[][2] = {{0, 1},   {1, 2},   {2, 3},   {3, 4},   {0, 5},   {5, 6
                          {7, 8},   {5, 9},   {9, 10},  {10, 11}, {11, 12}, {9, 13},  {13, 14},
                          {14, 15}, {15, 16}, {13, 17}, {0, 17},  {17, 18}, {18, 19}, {19, 20}};
 
-QColor stateColor(palm::HandState s) {
-  switch (s) {
-    case palm::HandState::Ok: return QColor(46, 204, 113);
-    case palm::HandState::LeftHand: return QColor(231, 76, 60);
-    case palm::HandState::NoHand: return QColor(200, 200, 200);
-    default: return QColor(243, 156, 18);
-  }
-}
-
 // Enrollment: red = no usable hand, amber = adjust or hold still, green = capturing.
 QColor gateColor(palm::GateStatus s) {
   switch (s) {
@@ -44,6 +35,43 @@ void drawTarget(QPainter& p, const QRectF& picture, float progress) {
   if (progress > 0) {
     p.setPen(QPen(QColor(46, 204, 113), 6, Qt::SolidLine, Qt::RoundCap));
     p.drawArc(ring, 90 * 16, -qRound(progress * 360 * 16));  // clockwise from the top
+  }
+}
+
+// Enrollment tilt map, top right: where the palm faces (centre = straight at the
+// camera, outer ring = max_tilt_deg). Green discs: samples taken, each as large
+// as the min_pose_sep_deg zone the next sample has to leave; dashed ring: where
+// the first sample has to be; dot: the palm now.
+void drawTiltMap(QPainter& p, const QRectF& picture, const FrameResult& r, const palm::GateLimits& lim, bool mirror) {
+  const double R = std::min(picture.width(), picture.height()) * 0.12;
+  const QPointF c(picture.right() - R - 16, picture.top() + R + 16);
+  const double k = R / std::max(1.f, lim.maxTiltDeg);  // pixels per degree
+  // normal -> map point: direction it faces in the picture, length = tilt in degrees
+  auto at = [&](const cv::Vec3f& n) {
+    const double xy = std::hypot(n[0], n[1]);
+    if (!(xy > 1e-6)) return c;
+    const double tilt = std::atan2(xy, -n[2]) * 180.0 / CV_PI;
+    return QPointF(c.x() + (mirror ? -1 : 1) * n[0] / xy * tilt * k, c.y() + n[1] / xy * tilt * k);
+  };
+  p.setPen(QPen(QColor(255, 255, 255, 160), 2));
+  p.setBrush(QColor(0, 0, 0, 120));
+  p.drawEllipse(c, R, R);
+  if (r.taken.empty()) {
+    p.setPen(QPen(QColor(255, 255, 255, 200), 2, Qt::DashLine));
+    p.setBrush(Qt::NoBrush);
+    p.drawEllipse(c, lim.frontalMaxDeg * k, lim.frontalMaxDeg * k);
+  }
+  p.setPen(Qt::NoPen);
+  for (const auto& n : r.taken) {
+    p.setBrush(QColor(46, 204, 113, 90));
+    p.drawEllipse(at(n), lim.minPoseSepDeg * k, lim.minPoseSepDeg * k);
+    p.setBrush(QColor(46, 204, 113));
+    p.drawEllipse(at(n), 4, 4);
+  }
+  if (r.hand.found && cv::norm(r.gate.normal) > 0) {
+    p.setPen(QPen(Qt::black, 1));
+    p.setBrush(Qt::white);
+    p.drawEllipse(at(r.gate.normal), 6, 6);
   }
 }
 
@@ -103,7 +131,9 @@ void VideoView::paintEvent(QPaintEvent*) {
   }
   p.drawImage(QRectF(QPointF(0, 0), size), r_.view);
   const double s = k * r_.viewScale;  // camera pixel -> widget pixel
-  const QColor c = r_.gated ? gateColor(r_.gate.status) : stateColor(r_.check.state);
+  // identification needs no stable window: every frame the gate passes is good
+  const bool good = r_.gated ? r_.gate.status == palm::GateStatus::Ready : r_.gate.framePasses();
+  const QColor c = good ? QColor(46, 204, 113) : r_.hand.found ? gateColor(r_.gate.status) : QColor(200, 200, 200);
   if (r_.hand.found) {
     const QRectF box(r_.check.box.x * s, r_.check.box.y * s, r_.check.box.width * s, r_.check.box.height * s);
     p.setBrush(Qt::NoBrush);
@@ -125,11 +155,13 @@ void VideoView::paintEvent(QPaintEvent*) {
   }
   p.restore();
 
-  QString message = QString::fromUtf8(palm::stateMessage(r_.check.state));
+  QString message = QString::fromUtf8(palm::gateMessage(r_.gate.status));
   if (r_.gated) {
-    message = QString::fromUtf8(palm::gateMessage(r_.gate.status));
     if (r_.embedded) p.fillRect(rect(), QColor(255, 255, 255, 150));  // a sample was taken: flash
     drawTarget(p, target, r_.gate.progress);
+    drawTiltMap(p, target, r_, lim_, mirror_);
+  } else if (good) {
+    message = QString::fromUtf8(palm::stateMessage(palm::HandState::Ok));
   }
   const QRect area = target.toRect().adjusted(10, 10, -10, -10);
   drawLabel(p, area, message, c.darker(130), 24, Qt::AlignTop);

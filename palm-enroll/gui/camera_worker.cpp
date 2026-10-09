@@ -161,12 +161,12 @@ void CameraWorker::run() {
       // the gate runs on every frame, so its stability window is full when enrollment starts
       const double nowMs = std::chrono::duration<double, std::milli>(Clock::now().time_since_epoch()).count();
       r.gated = gated_;
-      if (r.gated && !wasGated) gate.restart();
+      if (r.gated != wasGated) gate.setCollecting(r.gated);  // a new enrollment starts with no pose taken
       wasGated = r.gated;
       r.gate = gate.update(frame, r.check, r.hand, nowMs);
 
       const int every = embedIntervalMs_;
-      const bool ready = r.gated ? r.gate.status == palm::GateStatus::Ready : r.check.state == palm::HandState::Ok;
+      const bool ready = r.gated ? r.gate.status == palm::GateStatus::Ready : r.gate.framePasses();
       if (every >= 0 && ready && msSince(lastEmbed) >= every) {
         const auto t1 = Clock::now();
         const cv::Mat crop = frame(r.check.box);
@@ -179,8 +179,12 @@ void CameraWorker::run() {
         r.embedded = true;
         r.msEmbed = msSince(t1);
         lastEmbed = Clock::now();
-        if (r.gated) gate.restart();  // every sample needs its own stable window
+        if (r.gated) {
+          gate.addTaken(r.gate.normal);  // the next sample needs another tilt
+          gate.restart();                // and its own stable window
+        }
       }
+      if (r.gated) r.taken = gate.taken();
 
       r.viewScale = std::min(1.0, 1280.0 / frame.cols);
       cv::Mat view = frame;

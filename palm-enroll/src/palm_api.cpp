@@ -356,7 +356,8 @@ int palm_register(PalmHandle h, const PalmFrame* frames, int n, char* id_out, in
                                                    std::to_string(c.cfg.tmpl.minValid));
 
     if (!syncGallery(c)) return PALM_ERR_IO;  // never overwrite a gallery file that cannot be read
-    const auto best = c.gallery.search(t.tmpl, 1);
+    const std::vector<Vec> samples = palm::keptSamples(feats, t);
+    const auto best = c.gallery.search(samples, 1);  // closest pair of samples
     if (!best.empty() && score) *score = best[0].score;
     if (!best.empty() && best[0].score > c.cfg.dupCosMax) {
       if (!copyId(best[0].id, id_out, id_max_len))
@@ -367,7 +368,7 @@ int palm_register(PalmHandle h, const PalmFrame* frames, int n, char* id_out, in
 
     const std::string id = c.gallery.nextId();
     if (c.gallery.contains(id)) return fail(c, PALM_ERR_INTERNAL, "generated id already enrolled: " + id);
-    c.gallery.upsert({id, static_cast<int>(t.kept.size()), t.tmpl});
+    c.gallery.upsert({id, samples});
     try {
       c.gallery.save(c.cfg.galleryPath);
     } catch (const std::exception& e) {

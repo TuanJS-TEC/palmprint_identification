@@ -69,6 +69,9 @@ Config loadConfig(const std::string& path) {
   read(cap, "min_palm_frac", c.gate.minPalmFrac);
   read(cap, "max_palm_frac", c.gate.maxPalmFrac);
   read(cap, "max_angle_deg", c.gate.maxAngleDeg);
+  read(cap, "max_tilt_deg", c.gate.maxTiltDeg);
+  read(cap, "frontal_max_deg", c.gate.frontalMaxDeg);
+  read(cap, "min_pose_sep_deg", c.gate.minPoseSepDeg);
   read(cap, "min_finger_open", c.gate.minFingerOpen);
   read(cap, "min_mean", c.gate.minMean);
   read(cap, "max_mean", c.gate.maxMean);

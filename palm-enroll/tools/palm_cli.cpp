@@ -124,13 +124,14 @@ int cmdEnroll(PalmModel& model, const Config& cfg, const Args& a) {
                 cfg.tmpl.minValid);
     return 2;
   }
-  const auto dup = g.search(t.tmpl, 1, id);
+  const std::vector<Vec> stored = keptSamples(feats, t);
+  const auto dup = g.search(stored, 1, id);
   if (!dup.empty() && dup[0].score > cfg.dupCosMax && !a.has("force")) {
     std::printf("enroll %s: REFUSED, matches enrolled '%s' (cos %.3f > dup_cos_max %.3f); --force to override\n",
                 id.c_str(), dup[0].id.c_str(), dup[0].score, cfg.dupCosMax);
     return 3;
   }
-  g.upsert({id, static_cast<int>(t.kept.size()), t.tmpl});
+  g.upsert({id, stored});
   g.save(cfg.galleryPath);
   std::printf("enroll %s: OK%s, right hand, %zu/%zu samples, gallery %s has %zu people\n", id.c_str(),
               exists ? " (replaced)" : "", t.kept.size(), samples.size(), cfg.galleryPath.c_str(), g.entries().size());
@@ -265,7 +266,7 @@ int main(int argc, char** argv) {
         std::printf("%s %s\n", a.get("id").c_str(), ok ? "removed" : "not found");
         return ok ? 0 : 2;
       }
-      for (const auto& e : g.entries()) std::printf("%-30s %d samples\n", e.id.c_str(), e.numSamples);
+      for (const auto& e : g.entries()) std::printf("%-30s %d samples\n", e.id.c_str(), static_cast<int>(e.samples.size()));
       std::printf("%zu people in %s\n", g.entries().size(), cfg.galleryPath.c_str());
       return 0;
     }

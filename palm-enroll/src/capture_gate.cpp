@@ -25,10 +25,12 @@ bool insideFrame(const HandLandmarks& h, cv::Size size, float margin) {
 }
 
 // Angle of wrist -> middle knuckle from image up, degrees, 0..180.
-float tiltDeg(const HandLandmarks& h) {
+float rotationDeg(const HandLandmarks& h) {
   const cv::Point2f v = h.pts[9] - h.pts[0];
   return static_cast<float>(std::abs(std::atan2(v.x, -v.y)) * 180.0 / CV_PI);
 }
+
+float deg(double rad) { return static_cast<float>(rad * 180.0 / CV_PI); }
 
 // Mean length of the four fingers (knuckle -> tip) over the palm length. Curled
 // fingers fold towards the palm and get short. Tip-to-tip spread does not work:
@@ -76,6 +78,34 @@ PalmLight palmLight(const cv::Mat& frame, const HandLandmarks& h) {
 
 }  // namespace
 
+cv::Vec3f palmNormal(const HandLandmarks& h) {
+  // palm points only: the thumb and the fingers move on their own
+  const int k[] = {0, 5, 9, 13, 17};
+  cv::Point3f c(0, 0, 0);
+  for (int i : k) c += h.world[i];
+  c *= 1.f / 5;
+  cv::Matx<float, 5, 3> P;
+  for (int r = 0; r < 5; ++r) {
+    const cv::Point3f d = h.world[k[r]] - c;
+    P(r, 0) = d.x, P(r, 1) = d.y, P(r, 2) = d.z;
+  }
+  cv::Matx<float, 3, 1> w;
+  cv::Matx<float, 5, 3> u;
+  cv::Matx<float, 3, 3> vt;
+  cv::SVD::compute(P, w, u, vt);
+  // a plane needs two clear directions: the palm is ~0.08 m across
+  if (!(w(1) > 1e-3f * std::max(1e-6f, w(0))) || !(w(0) > 1e-6f)) return {};
+  cv::Vec3f n(vt(2, 0), vt(2, 1), vt(2, 2));
+  if (n[2] > 0) n = -n;
+  return n;
+}
+
+float normalAngleDeg(const cv::Vec3f& a, const cv::Vec3f& b) {
+  const double na = cv::norm(a), nb = cv::norm(b);
+  if (!(na > 0) || !(nb > 0)) return 90.f;
+  return deg(std::acos(std::clamp(a.dot(b) / (na * nb), -1.0, 1.0)));
+}
+
 const char* gateMessage(GateStatus s) {
   switch (s) {
     case GateStatus::NoHand: return "Đưa tay phải vào khung hình";
@@ -86,8 +116,11 @@ const char* gateMessage(GateStatus s) {
     case GateStatus::TooLarge: return "Lùi tay ra";
     case GateStatus::BadLight: return "Đổi vị trí hoặc tránh vùng ngược sáng";
     case GateStatus::Rotated: return "Xoay lòng bàn tay thẳng hơn";
+    case GateStatus::Tilted: return "Lòng bàn tay đang nghiêng - hướng thẳng về camera";
     case GateStatus::FingersClosed: return "Mở ngón tay tự nhiên";
     case GateStatus::Blurry: return "Ảnh bị mờ - giữ yên tay";
+    case GateStatus::NotFrontal: return "Mẫu đầu: lòng bàn tay thẳng, song song với camera";
+    case GateStatus::SamePose: return "Nghiêng nhẹ tay sang hướng khác các mẫu đã chụp";
     case GateStatus::Moving: return "Giữ yên tay";
     case GateStatus::Stabilizing: return "Giữ yên tay...";
     case GateStatus::Ready: return "Đủ điều kiện - đang chụp";
@@ -112,7 +145,13 @@ GateReport CaptureGate::update(const cv::Mat& frame, const HandCheck& chk, const
   // measurements for the log, also on failed frames
   const float palmLen = dist(h.pts[9], h.pts[0]);
   r.palmFrac = palmLen / frame.rows;
-  r.angleDeg = tiltDeg(h);
+  r.angleDeg = rotationDeg(h);
+  r.normal = palmNormal(h);
+  r.tiltDeg = normalAngleDeg(r.normal, cv::Vec3f(0, 0, -1));
+  for (const auto& t : taken_) {
+    const float a = normalAngleDeg(r.normal, t);
+    if (r.poseSepDeg < 0 || a < r.poseSepDeg) r.poseSepDeg = a;
+  }
   r.fingerOpen = fingerOpen(h, palmLen);
   const PalmLight light = palmLight(frame, h);
   r.mean = light.mean;
@@ -127,9 +166,13 @@ GateReport CaptureGate::update(const cv::Mat& frame, const HandCheck& chk, const
   if (r.mean < lim_.minMean || r.mean > lim_.maxMean || r.satFrac > lim_.maxSatFrac) return fail(GateStatus::BadLight);
   // 5. pose
   if (r.angleDeg > lim_.maxAngleDeg) return fail(GateStatus::Rotated);
+  if (r.tiltDeg > lim_.maxTiltDeg) return fail(GateStatus::Tilted);
   if (r.fingerOpen < lim_.minFingerOpen) return fail(GateStatus::FingersClosed);
   if (chk.state == HandState::Blurry) return fail(GateStatus::Blurry);
-  // 6. held still: checkHand's per-frame motion, then the window below
+  // 6. enrollment: a tilt not covered yet (before "hold still": the hand has to move first)
+  if (collecting_ && taken_.empty() && r.tiltDeg > lim_.frontalMaxDeg) return fail(GateStatus::NotFrontal);
+  if (collecting_ && !taken_.empty() && r.poseSepDeg < lim_.minPoseSepDeg) return fail(GateStatus::SamePose);
+  // 7. held still: checkHand's per-frame motion, then the window below
   if (chk.state == HandState::Moving) return fail(GateStatus::Moving);
 
   // chk.state == Ok: all checks pass on this frame
