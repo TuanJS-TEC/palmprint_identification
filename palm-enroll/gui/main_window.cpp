@@ -105,16 +105,30 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
     if (single > 0)
       log_->add("APP", QStringLiteral("%1 người chỉ có 1 mẫu (gallery cũ, một góc nghiêng): nên xóa và đăng ký lại").arg(single),
                 EventLog::Warn);
-  } catch (const std::exception& e) {
-    const std::string bak = cfg_.galleryPath + ".bak";
-    std::error_code ec;
-    std::filesystem::rename(cfg_.galleryPath, bak, ec);
-    log_->add("APP", QStringLiteral("không đọc được gallery (%1); đổi tên thành %2, bắt đầu gallery mới")
-                         .arg(QString::fromStdString(e.what()), QString::fromStdString(bak)),
-              EventLog::Fail);
-    QMessageBox::warning(this, QStringLiteral("Gallery"),
-                         QStringLiteral("Không đọc được gallery (%1).\nFile cũ được đổi tên thành %2; bắt đầu gallery mới.")
-                             .arg(QString::fromStdString(e.what()), QString::fromStdString(bak)));
+  } catch (const palm::GalleryError& e) {
+    using Kind = palm::GalleryError::Kind;
+    if (e.kind() == Kind::Corrupt || e.kind() == Kind::ModelMismatch) {
+      const std::string bak = cfg_.galleryPath + ".bak";
+      std::error_code ec;
+      std::filesystem::rename(cfg_.galleryPath, bak, ec);
+      log_->add("APP", QStringLiteral("không đọc được gallery (%1); đổi tên thành %2, bắt đầu gallery mới")
+                           .arg(QString::fromStdString(e.what()), QString::fromStdString(bak)),
+                EventLog::Fail);
+      QMessageBox::warning(this, QStringLiteral("Gallery"),
+                           QStringLiteral("Không đọc được gallery (%1).\nFile cũ được đổi tên thành %2; bắt đầu gallery mới.")
+                               .arg(QString::fromStdString(e.what()), QString::fromStdString(bak)));
+    } else {
+      // locked, unreadable or written by a newer program: the file may be fine,
+      // so it is left alone and nothing may be saved over it
+      galleryOk_ = false;
+      log_->add("APP", QStringLiteral("không mở được gallery (%1); không đăng ký / xóa được cho đến khi mở lại chương trình")
+                           .arg(QString::fromStdString(e.what())),
+                EventLog::Fail);
+      QMessageBox::warning(this, QStringLiteral("Gallery"),
+                           QStringLiteral("Không mở được gallery (%1).\nFile được giữ nguyên; đăng ký và xóa bị tắt. "
+                                          "Đóng chương trình đang dùng file rồi mở lại.")
+                               .arg(QString::fromStdString(e.what())));
+    }
   }
 
   // ---- layout: video | panel
@@ -180,6 +194,17 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
   imgRow->addStretch();
   iv->addLayout(imgRow);
   pv->addWidget(idBox);
+
+  auto* debugBox = new QGroupBox(QStringLiteral("Ảnh debug (vùng đo ánh sáng)"));
+  auto* dv = new QHBoxLayout(debugBox);
+  debugView_ = imageBox(112);
+  debugView_->setToolTip(QStringLiteral("Vùng lòng bàn tay dùng để đo ánh sáng; pixel cháy sáng (>= 250) tô đỏ"));
+  debugInfo_ = new QLabel;
+  debugInfo_->setWordWrap(true);
+  debugInfo_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+  dv->addWidget(debugView_);
+  dv->addWidget(debugInfo_, 1);
+  pv->addWidget(debugBox);
 
   auto* listBox = new QGroupBox(QStringLiteral("Đã đăng ký"));
   auto* lv = new QVBoxLayout(listBox);
@@ -289,6 +314,11 @@ void MainWindow::setMode(Mode m) {
 
 void MainWindow::startEnroll() {
   const QString id = idEdit_->text().trimmed();
+  if (!galleryOk_) {
+    enrollMsg_->setText(QStringLiteral("Gallery không mở được: không thể đăng ký."));
+    enrollMsg_->setStyleSheet("color:#e74c3c;");
+    return;
+  }
   if (id.isEmpty()) {
     enrollMsg_->setText(QStringLiteral("Nhập ID trước khi đăng ký."));
     return;
@@ -380,6 +410,18 @@ void MainWindow::onFrame(const FrameResult& r) {
                        .arg(r.msDetect, 0, 'f', 0)
                        .arg(r.embedded ? QStringLiteral(" | embedding %1 ms").arg(r.msEmbed, 0, 'f', 0) : QString())
                        .arg(gallery_.entries().size()));
+  if (!r.lightDebug.isNull()) {
+    debugView_->setPixmap(pix(r.lightDebug, 112));
+    debugInfo_->setText(QStringLiteral("sáng TB %1 (%2..%3)\ncháy %4% (tối đa %5%)")
+                            .arg(r.gate.mean, 0, 'f', 0)
+                            .arg(cfg_.gate.minMean, 0, 'f', 0)
+                            .arg(cfg_.gate.maxMean, 0, 'f', 0)
+                            .arg(r.gate.satFrac * 100, 0, 'f', 1)
+                            .arg(cfg_.gate.maxSatFrac * 100, 0, 'f', 0));
+  } else {
+    debugView_->clear();
+    debugInfo_->clear();
+  }
   if (r.embedded) {
     cropView_->setPixmap(pix(r.crop, 112));
     roiView_->setPixmap(pix(r.roi, 112));
@@ -552,6 +594,10 @@ void MainWindow::deleteSelected() {
   const QListWidgetItem* item = list_->currentItem();
   if (!item) return;
   const QString id = item->data(Qt::UserRole).toString();
+  if (!galleryOk_) {
+    QMessageBox::warning(this, QStringLiteral("Lỗi"), QStringLiteral("Gallery không mở được: không thể xóa."));
+    return;
+  }
   if (QMessageBox::question(this, QStringLiteral("Xóa"), QStringLiteral("Xóa '%1' khỏi gallery?").arg(id)) != QMessageBox::Yes)
     return;
   gallery_.remove(id.toStdString());

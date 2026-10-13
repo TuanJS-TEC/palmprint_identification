@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(palm_sdk VERSION 1.0.0 LANGUAGES CXX)
+project(palm_sdk VERSION 1.0.0 LANGUAGES C CXX)
 # Palm SDK: right-hand palmprint registration / login from camera frames.
 #
 #   libpalm.so    shared library exporting only the C API of include/palm_api.h
@@ -46,6 +46,16 @@ find_library(ORT_LIBRARY onnxruntime
   NO_CMAKE_FIND_ROOT_PATH REQUIRED)
 message(STATUS "ONNX Runtime: ${ORT_LIBRARY}")
 
+# SQLite for the gallery database (amalgamation in third_party/): built in, with
+# hidden symbols, so it cannot clash with a SQLite of the app.
+add_library(sqlite3_palm STATIC third_party/sqlite3/sqlite3.c)
+target_include_directories(sqlite3_palm PUBLIC third_party/sqlite3)
+target_compile_definitions(sqlite3_palm PRIVATE
+  SQLITE_OMIT_LOAD_EXTENSION SQLITE_THREADSAFE=1 SQLITE_DQS=0 SQLITE_DEFAULT_MEMSTATUS=0)
+set_target_properties(sqlite3_palm PROPERTIES C_VISIBILITY_PRESET hidden POSITION_INDEPENDENT_CODE ON)
+find_package(Threads REQUIRED)
+target_link_libraries(sqlite3_palm PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+
 set(PALM_SOURCES
   src/config.cpp
   src/gallery.cpp
@@ -56,14 +66,14 @@ set(PALM_SOURCES
   src/preprocess.cpp)
 add_library(palm_objects OBJECT ${PALM_SOURCES})
 target_include_directories(palm_objects PUBLIC include src ${ORT_INCLUDE_DIR})
-target_link_libraries(palm_objects PUBLIC opencv_core opencv_imgproc)  # include directories
+target_link_libraries(palm_objects PUBLIC opencv_core opencv_imgproc sqlite3_palm)  # include directories
 if(NOT MSVC)
   target_compile_options(palm_objects PRIVATE -Wall -Wextra)
 endif()
 
 add_library(palm SHARED $<TARGET_OBJECTS:palm_objects>)
 target_include_directories(palm PUBLIC include)
-target_link_libraries(palm PRIVATE opencv_core opencv_imgproc ${ORT_LIBRARY})
+target_link_libraries(palm PRIVATE opencv_core opencv_imgproc ${ORT_LIBRARY} sqlite3_palm)
 if(NOT APPLE AND NOT MSVC)
   # exports: palm_* only (no C++ template instances, no symbols of a static OpenCV)
   target_link_options(palm PRIVATE "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/palm.map" "-Wl,--exclude-libs,ALL")
@@ -75,7 +85,7 @@ endif()
 
 add_library(palm_static STATIC $<TARGET_OBJECTS:palm_objects>)
 target_include_directories(palm_static PUBLIC include src ${ORT_INCLUDE_DIR})
-target_link_libraries(palm_static PUBLIC opencv_core opencv_imgproc ${ORT_LIBRARY})
+target_link_libraries(palm_static PUBLIC opencv_core opencv_imgproc ${ORT_LIBRARY} sqlite3_palm)
 
 if(PALM_BUILD_TOOLS)
   add_executable(palm_cli tools/palm_cli.cpp)  # uses internal headers: links the static library

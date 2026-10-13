@@ -14,13 +14,14 @@ pkg=$out/$name
 frames=$proj/output/original         # mirror images of the camera view
 
 rm -rf "$pkg"
-mkdir -p "$pkg/include" "$pkg/src" "$pkg/tools" "$pkg/tests" "$pkg/models" "$pkg/testdata"
+mkdir -p "$pkg/include" "$pkg/src" "$pkg/tools" "$pkg/tests" "$pkg/models" "$pkg/testdata" "$pkg/third_party/sqlite3"
 cp "$here/CMakeLists.txt" "$here/palm.map" "$here/README.md" "$here/NOTICE.md" "$pkg/"
 cp "$root/src/palm_api.h" "$pkg/include/"
 cp "$root/src/palm_api.cpp" "$pkg/src/"
 for f in config gallery hand_crop hand_detector palm_model preprocess; do
   cp "$root/src/$f.cpp" "$root/src/$f.h" "$pkg/src/"
 done
+cp "$root/third_party/sqlite3/sqlite3.c" "$root/third_party/sqlite3/sqlite3.h" "$root/third_party/sqlite3/README.txt" "$pkg/third_party/sqlite3/"
 cp "$root/tools/palm_cli.cpp" "$root/tools/args.h" "$pkg/tools/"
 cp "$here/test_golden.cpp" "$pkg/tests/"
 for m in EE_PRnet-epoch-60.onnx palm_detection_mediapipe_2023feb.onnx \

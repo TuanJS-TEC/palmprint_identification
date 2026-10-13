@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
   }
 
   // ---- init as an app without a config file: explicit model paths, built-in thresholds
-  const std::string galleryPath = (fs::path(data) / "golden_gallery.bin").string();
+  const std::string galleryPath = (fs::path(data) / "golden_gallery.db").string();
   fs::remove(galleryPath);
   const std::string embed = modelPath(models, "EE_PRnet-epoch-60.onnx");
   const std::string palmDet = modelPath(models, "palm_detection_mediapipe_2023feb.onnx");

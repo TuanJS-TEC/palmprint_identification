@@ -31,7 +31,7 @@ TỆP
   palm_gui, palm_cli   chương trình; palm_cli quản lý gallery bằng dòng lệnh
                        (./palm_cli list, ./palm_cli remove --id user_0001)
   config.yaml          camera, ngưỡng; ngưỡng đo trên dữ liệu output/ của dự án
-  gallery.bin          người đã đăng ký, tạo ở lần đăng ký đầu (CHƯA mã hóa)
+  gallery.db           người đã đăng ký (SQLite), tạo ở lần đăng ký đầu (CHƯA mã hóa)
   palm_gui.log         log sự kiện và độ tin cậy (xem mục LOG)
   models/              EE_PRnet (nhận dạng) + 2 model MediaPipe phát hiện tay (Apache-2.0)
 

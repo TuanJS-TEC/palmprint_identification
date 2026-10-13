@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(palm_enroll CXX)
+project(palm_enroll C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,6 +18,16 @@ find_path(ORT_INCLUDE_DIR onnxruntime_cxx_api.h
 find_library(ORT_LIBRARY onnxruntime HINTS ${ORT_ROOT}/lib REQUIRED)
 message(STATUS "ONNX Runtime: ${ORT_LIBRARY}")
 
+# SQLite (amalgamation in third_party/): the gallery database. Built in, so the
+# desktop tools and the Android SDK read the same files; symbols stay hidden.
+add_library(sqlite3_palm STATIC third_party/sqlite3/sqlite3.c)
+target_include_directories(sqlite3_palm PUBLIC third_party/sqlite3)
+target_compile_definitions(sqlite3_palm PRIVATE
+  SQLITE_OMIT_LOAD_EXTENSION SQLITE_THREADSAFE=1 SQLITE_DQS=0 SQLITE_DEFAULT_MEMSTATUS=0)
+set_target_properties(sqlite3_palm PROPERTIES C_VISIBILITY_PRESET hidden POSITION_INDEPENDENT_CODE ON)
+find_package(Threads REQUIRED)
+target_link_libraries(sqlite3_palm PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+
 add_library(palm
   src/preprocess.cpp
   src/palm_model.cpp
@@ -28,7 +38,7 @@ add_library(palm
   src/capture_gate.cpp
   src/palm_api.cpp)
 target_include_directories(palm PUBLIC src ${ORT_INCLUDE_DIR})
-target_link_libraries(palm PUBLIC ${OpenCV_LIBS} ${ORT_LIBRARY})
+target_link_libraries(palm PUBLIC ${OpenCV_LIBS} ${ORT_LIBRARY} sqlite3_palm)
 if(MSVC)
   target_compile_options(palm PRIVATE /W4)
 else()
@@ -61,7 +71,7 @@ endif()
 # ---------------------------------------------------------------- deploy
 # cmake --install build --prefix ../binary : a folder that runs on its own
 # (executables, config.yaml with paths into models/, the ONNX models).
-# gallery.bin in the prefix is left alone; config.yaml is overwritten.
+# gallery.db in the prefix is left alone; config.yaml is overwritten.
 set(PALM_MODELS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../models" CACHE PATH "folder with the ONNX models")
 install(TARGETS palm_cli DESTINATION .)
 if(TARGET palm_gui)

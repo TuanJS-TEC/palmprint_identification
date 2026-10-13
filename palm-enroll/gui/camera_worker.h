@@ -28,6 +28,7 @@ struct FrameResult {
   std::vector<float> feat;   // L2-normalised fc1R feature
   QImage roi;                // 112x112 aligned palm ROI the recogniser saw
   QImage crop;               // hand crop given to EE-PRnet (thumbnail)
+  QImage lightDebug;         // palm area of the light check, saturated pixels red; null without a hand
   double fps = 0, msDetect = 0, msEmbed = 0;
 };
 Q_DECLARE_METATYPE(FrameResult)

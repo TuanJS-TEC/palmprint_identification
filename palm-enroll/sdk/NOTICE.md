@@ -6,6 +6,7 @@
 | `models/palm_detection_mediapipe_2023feb.onnx`, `models/handpose_estimation_mediapipe_2023feb.onnx` | Model bàn tay của MediaPipe (Google), OpenCV Zoo chuyển sang ONNX | Apache-2.0, xem `models/LICENSE.mediapipe-hand-models` |
 | `models/EE_PRnet-epoch-60.onnx` | Chuyển từ `EE_PRnet-epoch-60.mat` của Matkowski, Chai, Kong, "Palmprint Recognition in Uncontrolled and Uncooperative Environment", IEEE TIFS 2019, github.com/matkowski-voy/Palmprint-Recognition-in-the-Wild | **Không có giấy phép**, xem bên dưới |
 | `testdata/*.png` | Ảnh camera của bộ thu dữ liệu nội bộ | **Dữ liệu cá nhân**, xem bên dưới |
+| `third_party/sqlite3/` | SQLite 3.54.0 amalgamation, sqlite.org | Public domain |
 | OpenCV, ONNX Runtime (phụ thuộc, không nằm trong gói) | opencv.org, onnxruntime.ai | Apache-2.0, MIT |
 
 ## Phải đọc trước khi đưa vào sản phẩm

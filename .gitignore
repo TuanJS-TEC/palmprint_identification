@@ -18,7 +18,8 @@ models/
 binary/models/
 binary/palm_cli
 binary/palm_gui
-binary/gallery.bin
+binary/gallery.db
+*.db-journal
 *.onnx
 *.mat
 *.f32

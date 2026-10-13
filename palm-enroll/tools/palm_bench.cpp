@@ -46,7 +46,7 @@ const char* kUsage = R"(usage: palm_bench [--config config.yaml] (--frames DIR [
   --repeat R           run over the input R times (default 1)
   --warmup W           drop the first W frames from the statistics (default 5)
   --gallery-sizes L    match against synthetic galleries of these sizes (default 25,1000,10000)
-  --gallery FILE       match against a real gallery.bin instead
+  --gallery FILE       match against a real gallery.db instead
   --det-threads T      hand detector threads (default 2, as palm_gui)
 )";
 

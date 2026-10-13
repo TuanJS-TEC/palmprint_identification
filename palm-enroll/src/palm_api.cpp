@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -26,12 +28,16 @@ namespace fs = std::filesystem;
 namespace {
 
 // Gallery file identity, to notice when another process (palm_gui, palm_cli)
-// rewrote it. Size as well as mtime: two writes can share an mtime tick.
+// rewrote it. Size and the SQLite file change counter as well as mtime: two
+// writes can share an mtime tick, and the counter moves with every commit.
 struct FileStamp {
   bool exists = false;
   fs::file_time_type time{};
   std::uintmax_t size = 0;
-  bool operator==(const FileStamp& o) const { return exists == o.exists && time == o.time && size == o.size; }
+  std::uint32_t changeCounter = 0;
+  bool operator==(const FileStamp& o) const {
+    return exists == o.exists && time == o.time && size == o.size && changeCounter == o.changeCounter;
+  }
 };
 
 FileStamp stampOf(const std::string& path) {
@@ -42,6 +48,11 @@ FileStamp stampOf(const std::string& path) {
   s.size = fs::file_size(path, ec);
   if (ec) return {};
   s.exists = true;
+  // header bytes 24..27, big-endian; absent in a file that is not a database
+  std::ifstream f(path, std::ios::binary);
+  unsigned char h[28];
+  if (f.seekg(0) && f.read(reinterpret_cast<char*>(h), sizeof h))
+    s.changeCounter = (std::uint32_t{h[24]} << 24) | (std::uint32_t{h[25]} << 16) | (std::uint32_t{h[26]} << 8) | h[27];
   return s;
 }
 

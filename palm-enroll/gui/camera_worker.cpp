@@ -164,6 +164,7 @@ void CameraWorker::run() {
       if (r.gated != wasGated) gate.setCollecting(r.gated);  // a new enrollment starts with no pose taken
       wasGated = r.gated;
       r.gate = gate.update(frame, r.check, r.hand, nowMs);
+      if (!r.gate.lightDebug.empty()) r.lightDebug = toQImage(r.gate.lightDebug);
 
       const int every = embedIntervalMs_;
       const bool ready = r.gated ? r.gate.status == palm::GateStatus::Ready : r.gate.framePasses();

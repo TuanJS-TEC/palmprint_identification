@@ -51,6 +51,7 @@ class MainWindow : public QMainWindow {
 
   palm::Config cfg_;
   palm::Gallery gallery_;
+  bool galleryOk_ = true;  // false: the gallery file could not be opened and must not be overwritten
   Mode mode_ = Mode::Idle;
 
   QThread thread_;
@@ -79,6 +80,7 @@ class MainWindow : public QMainWindow {
   QLabel* enrollMsg_;
   QLabel* result_;
   QLabel *roiView_, *cropView_;
+  QLabel *debugView_, *debugInfo_;
   QListWidget* list_;
   EventLog* log_;
 };

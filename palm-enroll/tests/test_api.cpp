@@ -103,7 +103,7 @@ int main(int argc, char** argv) {
   const fs::path tmp = fs::temp_directory_path() / "palm_test_api";
   fs::remove_all(tmp);
   fs::create_directories(tmp);
-  const std::string galleryPath = (tmp / "gallery.bin").string();
+  const std::string galleryPath = (tmp / "gallery.db").string();
   PalmInitOptions opt{};
   opt.config_path = argv[1];
   opt.gallery_path = galleryPath.c_str();
@@ -318,7 +318,7 @@ int main(int argc, char** argv) {
   palm_release(h);
 
   // ---- save failure: nothing enrolled, error reported
-  const std::string noDir = (tmp / "missing_dir" / "gallery.bin").string();
+  const std::string noDir = (tmp / "missing_dir" / "gallery.db").string();
   opt.gallery_path = noDir.c_str();
   h = nullptr;
   CHECK(palm_init(&opt, &h) == PALM_OK);
@@ -329,7 +329,7 @@ int main(int argc, char** argv) {
 
   // ---- no config file: built-in thresholds, explicit paths
   PalmInitOptions direct{};
-  const std::string g2 = (tmp / "g2.bin").string();
+  const std::string g2 = (tmp / "g2.db").string();
   direct.embed_onnx = cfg.model.onnxPath.c_str();
   direct.palm_onnx = cfg.hand.palmOnnx.c_str();
   direct.landmark_onnx = cfg.hand.landmarkOnnx.c_str();

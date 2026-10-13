@@ -90,11 +90,11 @@ Quy ước:
 - `palm_register` nhận 1..32 khung hình, nên dùng 5 khung chụp cách nhau khoảng 0.7 s và nghiêng tay giữa các lần chụp. Cần ít nhất `template.min_valid` khung hợp lệ và nhất quán. Nếu bàn tay khớp một người đã đăng ký (trên `dup_cos_max`) thì trả `PALM_ERR_ALREADY_REGISTERED`. `frame_status` (NULL hoặc mảng ≥ n phần tử) cho biết lý do từng khung bị loại.
 - `palm_check_register` chỉ xét 1 khung hình; khoảng 16% khung đơn của người đã đăng ký bị từ chối ở ngưỡng 0.82. Khi đăng nhập, nên thử vài khung liên tiếp và yêu cầu vài lần OK cùng một ID. Khi không nhận ra, hàm không tiết lộ ID gần nhất.
 - Mỗi handle có mutex riêng nên gọi từ nhiều thread vẫn an toàn (các lệnh chạy tuần tự). Chuỗi từ `palm_last_error(h)` chỉ hợp lệ đến lần gọi kế tiếp trên `h`.
-- Gallery được nạp lại khi file thay đổi (`palm_gui`/`palm_cli` cùng ghi). Nếu file không đọc được: check tiếp tục dùng bản trong RAM, còn register trả `PALM_ERR_IO` để không ghi đè. Không có khóa giữa các process: hai process cùng đăng ký một lúc thì bên ghi sau thắng.
+- Gallery được nạp lại khi file thay đổi (`palm_gui`/`palm_cli` cùng ghi). Nếu file không đọc được: check tiếp tục dùng bản trong RAM, còn register trả `PALM_ERR_IO` để không ghi đè. Mỗi lần ghi là một transaction SQLite (process khác đang giữ khóa quá 5 giây thì báo lỗi `PALM_ERR_IO`), nhưng mỗi lần lưu thay cả nội dung gallery: hai process cùng đăng ký một lúc thì bên ghi sau thắng.
 
 Mã lỗi: `ARGUMENT` 1, `INIT` 2, `IO` 3, `INTERNAL` 4; khung hình không dùng được: `NO_HAND` 10, `LEFT_HAND` 11, `BACK_OF_HAND` 12, `HAND_TOO_SMALL` 13, `HAND_OUT_OF_FRAME` 14, `BLURRY` 15; register: `TOO_FEW_SAMPLES` 20, `ALREADY_REGISTERED` 21; check: `GALLERY_EMPTY` 30, `NOT_RECOGNIZED` 31. `palm_status_text()` trả mô tả tiếng Anh.
 
-ID tự sinh lớn hơn mọi `user_<số>` từng có trong gallery, kể cả người đã xóa, nên không bao giờ cấp lại ID cũ; bộ đếm được lưu trong file. Nếu lưu gallery lỗi (`PALM_ERR_IO`), số ID vừa sinh bị bỏ trống, giống auto-increment của CSDL.
+ID tự sinh lớn hơn mọi `user_<số>` từng có trong gallery, kể cả người đã xóa, nên không bao giờ cấp lại ID cũ; bộ đếm được lưu trong database (bảng `meta`). Nếu lưu gallery lỗi (`PALM_ERR_IO`), số ID vừa sinh bị bỏ trống, giống auto-increment của CSDL.
 
 Build `.so` cho Android (chưa làm): thêm `add_library(palm_android SHARED src/palm_api.cpp ...)` build bằng toolchain NDK, cùng OpenCV Android SDK và ONNX Runtime AAR, rồi viết wrapper JNI gọi các hàm trên. Model phải được chép từ assets ra thư mục file của app để có đường dẫn.
 
@@ -152,7 +152,7 @@ Người khác nhau: trung vị 0.535, p99 0.746. Hệ quả là cùng một ng�
 Cách xử lý hiện tại:
 - Cổng chụp đo góc nghiêng (`capture.max_tilt_deg`, 25°) và áp dụng cho cả đăng ký lẫn nhận dạng. Trên tập trên, giới hạn này đưa EER từ 9.8% xuống 2.3–2.9%.
 - Đăng ký: mẫu đầu phải gần thẳng (`frontal_max_deg`). Mỗi mẫu sau phải lệch ít nhất `min_pose_sep_deg` so với mọi mẫu đã chụp. `palm_gui` hiện một bản đồ góc ở góc phải trên để hướng dẫn.
-- Gallery lưu **từng mẫu** (`PALMGAL3`) thay vì vector trung bình. Nhận dạng lấy cos lớn nhất với các mẫu của mỗi người; kiểm tra trùng lấy cos lớn nhất giữa mọi cặp (mẫu mới, mẫu đã lưu).
+- Gallery lưu **từng mẫu** (bảng `samples`) thay vì vector trung bình. Nhận dạng lấy cos lớn nhất với các mẫu của mỗi người; kiểm tra trùng lấy cos lớn nhất giữa mọi cặp (mẫu mới, mẫu đã lưu).
 - Khoảng sáng được thu hẹp còn 70..160.
 
 Ngưỡng 0.82 chưa đo lại cho cách khớp theo mẫu trên dữ liệu đa góc, vì chưa có dữ liệu như vậy. `frontal_max_deg`, `min_pose_sep_deg` và khoảng sáng mới chỉ là ước lượng: hiệu chỉnh theo các dòng HAND/ENROLL trong log (`nghiêng`, `lệch`, `sáng`). C API (`palm_register`) đã lưu từng mẫu, nhưng **chưa** kiểm tra góc nghiêng của các khung nhận vào.
@@ -160,9 +160,9 @@ Ngưỡng 0.82 chưa đo lại cho cách khớp theo mẫu trên dữ liệu đa
 ## Khác với tài liệu hướng dẫn
 
 - Dùng một ONNX duy nhất thay cho `theta.onnx`, `embed.onnx` và `tps_T.bin`, vì TPS và sampler đã nằm trong graph.
-- Không dùng yaml-cpp, Catch2, Eigen, SQLite hay libsodium (máy chưa cài). Thay vào đó: `cv::FileStorage` cho YAML, test tự viết chạy bằng CTest, `std::vector` cho vector đặc trưng.
-- `gallery.bin` là file nhị phân **chưa mã hóa**. Phải thêm mã hóa (libsodium) trước khi chạy với dữ liệu thật.
-- Định dạng gallery hiện là `PALMGAL3` (lưu từng mẫu của mỗi người). Vẫn đọc được file `PALMGAL1`/`PALMGAL2` cũ, mỗi người cũ được nạp thành 1 mẫu (template trung bình); nên xóa và đăng ký lại những người này. Chương trình cũ không đọc được file mới, nên cần `cmake --install` lại vào `binary/`.
+- Không dùng yaml-cpp, Catch2, Eigen hay libsodium (máy chưa cài). Thay vào đó: `cv::FileStorage` cho YAML, test tự viết chạy bằng CTest, `std::vector` cho vector đặc trưng.
+- `gallery.db` (SQLite) **chưa mã hóa**. Phải thêm mã hóa (libsodium hoặc SQLCipher) trước khi chạy với dữ liệu thật.
+- Gallery là một database SQLite (`gallery.db`, amalgamation trong `third_party/sqlite3`, build kèm `libpalm`): bảng `meta` (`model_version`, `dim`, `next_seq`), `users`, `samples` (mỗi mẫu là một BLOB `dim` float32 little-endian, `PRAGMA user_version` = 1). Định dạng `.bin` (`PALMGAL1/2/3`) đã bỏ hẳn: code không còn đọc hay ghi nó. Gallery 5 người cũ được chuyển sang `.db` một lần (2026-10-13) bằng công cụ tạm không nằm trong repo. Chương trình đã build trước đó không đọc được `.db`, nên cần `cmake --install` lại vào `binary/`.
 
 ## Chưa làm
 

@@ -17,8 +17,11 @@ float dist(cv::Point2f a, cv::Point2f b) { return std::hypot(a.x - b.x, a.y - b.
 
 // Every landmark and the palm box keep `margin` (fraction of the frame) from the edge.
 bool insideFrame(const HandLandmarks& h, cv::Size size, float margin) {
-  const float mx = margin * size.width, my = margin * size.height;
-  auto in = [&](float x, float y) { return x >= mx && x <= size.width - mx && y >= my && y <= size.height - my; };
+  const float mx = margin * size.width;
+  const float my = margin * size.height;
+  auto in = [&](float x, float y) {
+    return x >= mx && x <= size.width - mx && y >= my && y <= size.height - my;
+  };
   for (const auto& p : h.pts)
     if (!in(p.x, p.y)) return false;
   return in(h.palmBox.x, h.palmBox.y) && in(h.palmBox.x + h.palmBox.width, h.palmBox.y + h.palmBox.height);
@@ -37,13 +40,16 @@ float deg(double rad) { return static_cast<float>(rad * 180.0 / CV_PI); }
 // curled fingers still span about one knuckle width.
 float fingerOpen(const HandLandmarks& h, float palmLen) {
   float sum = 0.f;
-  for (int f = 0; f < 4; ++f) sum += dist(h.pts[5 + 4 * f], h.pts[8 + 4 * f]);  // index, middle, ring, pinky
+  for (int f = 0; f < 4; ++f) {
+    sum += dist(h.pts[5 + 4 * f], h.pts[8 + 4 * f]);  // index, middle, ring, pinky
+  };
   return sum / 4 / std::max(1e-5f, palmLen);
 }
 
 struct PalmLight {
   float mean = 0.f;     // gray level 0..255
   float satFrac = 0.f;  // share of pixels >= 250
+  // cv::Mat debug;        // BGR kSample x kSample: gray inside the palm polygon, saturated pixels red
 };
 
 // Light measured only inside the palm polygon, so a white wall or a shadow behind
@@ -59,9 +65,12 @@ PalmLight palmLight(const cv::Mat& frame, const HandLandmarks& h) {
   cv::cvtColor(small, gray, cv::COLOR_BGR2GRAY);
 
   // fillPoly, not fillConvexPoly: the landmark polygon can be concave with a few px of error
-  const float sx = static_cast<float>(kSample) / box.width, sy = static_cast<float>(kSample) / box.height;
+  const float sx = static_cast<float>(kSample) / box.width;
+  const float sy = static_cast<float>(kSample) / box.height;
   std::vector<cv::Point> pp;
-  for (const auto& p : poly) pp.emplace_back(std::lround((p.x - box.x) * sx), std::lround((p.y - box.y) * sy));
+  for (const auto& p : poly) {
+    pp.emplace_back(std::lround((p.x - box.x) * sx), std::lround((p.y - box.y) * sy));
+  };
   cv::Mat mask = cv::Mat::zeros(kSample, kSample, CV_8U);
   cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{pp}, cv::Scalar(255));
   const int area = cv::countNonZero(mask);
@@ -73,6 +82,11 @@ PalmLight palmLight(const cv::Mat& frame, const HandLandmarks& h) {
   cv::compare(gray, 250, sat, cv::CMP_GE);
   cv::bitwise_and(sat, mask, sat);
   out.satFrac = static_cast<float>(cv::countNonZero(sat)) / area;
+  // cv::Mat gray3;
+  // cv::cvtColor(gray, gray3, cv::COLOR_GRAY2BGR);
+  // out.debug = cv::Mat::zeros(kSample, kSample, CV_8UC3);
+  // gray3.copyTo(out.debug, mask);
+  // out.debug.setTo(cv::Scalar(0, 0, 255), sat);
   return out;
 }
 
@@ -156,6 +170,7 @@ GateReport CaptureGate::update(const cv::Mat& frame, const HandCheck& chk, const
   const PalmLight light = palmLight(frame, h);
   r.mean = light.mean;
   r.satFrac = light.satFrac;
+  // r.lightDebug = light.debug;
 
   // 2. whole hand in the frame (checkHand's OutOfFrame is about the crop box)
   if (chk.state == HandState::OutOfFrame || !insideFrame(h, frame.size(), lim_.edgeMargin)) return fail(GateStatus::CutOff);

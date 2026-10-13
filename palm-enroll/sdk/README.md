@@ -104,7 +104,7 @@ Dòng `palm_extract: … ms` cho biết tốc độ trên máy đó.
 
 ## 3. Dùng trong app
 
-**Khởi tạo.** Chép 3 file `.onnx` từ `assets/` ra `filesDir` ở lần chạy đầu; nên khai báo `noCompress += "onnx"` để chép nhanh. Sau đó gọi `palm_init` trên thread nền (mất khoảng 1–2 s), với `gallery_path = filesDir/gallery.bin`. Giữ một handle duy nhất cho cả app.
+**Khởi tạo.** Chép 3 file `.onnx` từ `assets/` ra `filesDir` ở lần chạy đầu; nên khai báo `noCompress += "onnx"` để chép nhanh. Sau đó gọi `palm_init` trên thread nền (mất khoảng 1–2 s), với `gallery_path = filesDir/gallery.db`. Giữ một handle duy nhất cho cả app.
 
 **Camera.** Dùng CameraX `ImageAnalysis` với:
 - định dạng `OUTPUT_IMAGE_FORMAT_RGBA_8888`, độ phân giải khoảng 1280×720, `STRATEGY_KEEP_ONLY_LATEST`;
@@ -177,13 +177,13 @@ Muốn đổi ngưỡng thì chép `config.yaml` ra `filesDir`, sửa, rồi tru
 
 **Thiếu so với một hệ đăng nhập thật:**
 - chống giả mạo (liveness): ảnh chụp lòng bàn tay có thể qua được;
-- mã hóa gallery: hiện gallery là file nhị phân thường, nên mã hóa bằng Android Keystore;
+- mã hóa gallery: hiện gallery là file SQLite thường, nên mã hóa (SQLCipher hoặc khóa từ Android Keystore);
 - API xóa người dùng và liệt kê danh sách.
 
 ## Gallery (CSDL)
 
-File nhị phân `PALMGAL3`, mỗi người lưu các mẫu đăng ký (mỗi mẫu là một vector 512 chiều). Điểm của một người là cos lớn nhất giữa vector cần so và các mẫu của người đó.
+Database SQLite (SQLite 3.54 build kèm trong `libpalm`, không cần thư viện hệ thống), mỗi người lưu các mẫu đăng ký (mỗi mẫu là một vector 512 chiều). Điểm của một người là cos lớn nhất giữa vector cần so và các mẫu của người đó.
 - ID tự sinh tăng dần và không bao giờ dùng lại, kể cả của người đã xóa.
-- File được ghi atomic (ghi file tạm rồi đổi tên), nên không bao giờ bị đọc dở.
+- Mỗi lần lưu là một transaction SQLite (journal), nên không bao giờ bị đọc dở; process khác giữ khóa quá 5 giây thì trả `PALM_ERR_IO`.
 - Gallery được nạp lại khi file thay đổi.
 - Nếu muốn CSDL nằm trên server: app chỉ cần `palm_extract`, gửi vector lên server. Server lưu từng mẫu, so cosine với từng mẫu rồi lấy giá trị lớn nhất: ≥ 0.82 là đăng nhập được, > 0.82 (giữa bất kỳ cặp mẫu mới và mẫu đã lưu) là đăng ký trùng.

@@ -66,6 +66,7 @@ struct GateReport {
   float fingerOpen = 0.f; // see GateLimits::minFingerOpen
   float mean = 0.f;       // palm gray level
   float satFrac = 0.f;    // saturated palm pixels
+  // cv::Mat lightDebug;     // BGR 64x64: palm pixels of the light check, saturated ones red; empty if not measured
 
   // Every check passed on this frame (identification needs no stable window).
   bool framePasses() const { return status == GateStatus::Stabilizing || status == GateStatus::Ready; }

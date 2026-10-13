@@ -37,7 +37,7 @@ match:
   accept_cos_min: 0.82    # vs the closest stored sample of each person.
                           # FAR 0.1% estimated at 0.795 from only ~6 impostor scores;
                           # 0.82: 0 wrong accepts, 16.5% single images rejected
-gallery: "gallery.bin"
+gallery: "gallery.db"
 # ---- live capture (palm_gui)
 camera:
   device: 0               # /dev/video0

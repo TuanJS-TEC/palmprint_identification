@@ -26,7 +26,7 @@ struct Config {
   TemplateParams tmpl;
   float dupCosMax = 2.f;     // refuse enrollment if another id matches above; > 1 disables
   float acceptCosMin = 2.f;  // identification accept threshold; > 1 never accepts
-  std::string galleryPath = "gallery.bin";
+  std::string galleryPath = "gallery.db";
 
   // live capture (palm_gui)
   struct {

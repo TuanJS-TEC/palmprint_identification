@@ -1,9 +1,12 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
 
 #include "check.h"
 #include "gallery.h"
+#include "sqlite3.h"
 
 using namespace palm;
 
@@ -61,25 +64,39 @@ int main() {
     CHECK(threwBad && !g.contains("c"));
   }
 
-  const auto path = (std::filesystem::temp_directory_path() / "palm_test_gallery.bin").string();
+  const auto path = (std::filesystem::temp_directory_path() / "palm_test_gallery.db").string();
+  std::filesystem::remove(path);
+  const auto throwsKind = [](auto&& fn, GalleryError::Kind kind) {
+    try {
+      fn();
+    } catch (const GalleryError& e) {
+      return e.kind() == kind;
+    } catch (...) {
+    }
+    return false;
+  };
+
   g.save(path);
   Gallery h("test_v1", dim);
   h.load(path);
   CHECK(h.entries().size() == 2 && h.entries()[0].id == "a" && h.entries()[0].samples.size() == 2);
   CHECK(h.entries()[0].samples == g.entries()[0].samples && h.entries()[1].samples == g.entries()[1].samples);
-  bool threw = false;
-  try {
-    Gallery("other_model", dim).load(path);
-  } catch (const std::exception&) {
-    threw = true;
-  }
-  CHECK(threw);
+  CHECK(throwsKind([&] { Gallery("other_model", dim).load(path); }, GalleryError::Kind::ModelMismatch));
+  CHECK(throwsKind([&] { Gallery("test_v1", dim + 1).load(path); }, GalleryError::Kind::ModelMismatch));
   CHECK(h.remove("a") && !h.remove("a") && h.entries().size() == 1);
+  h.save(path);  // replaces the content, not appends
+  Gallery h2("test_v1", dim);
+  h2.load(path);
+  CHECK(h2.entries().size() == 1 && h2.entries()[0].id == "b");
   std::filesystem::remove(path);
 
   Gallery empty("test_v1", dim);
-  empty.load(path);  // missing file -> empty
+  empty.load(path);  // missing file -> empty, and nothing is created
+  CHECK(empty.entries().empty() && !std::filesystem::exists(path));
+  { std::ofstream(path, std::ios::binary | std::ios::trunc); }  // 0 bytes -> empty as well
+  empty.load(path);
   CHECK(empty.entries().empty());
+  std::filesystem::remove(path);
 
   // id parsing: anything but user_<1-9 digits> is ignored, never throws
   uint32_t n = 0;
@@ -105,65 +122,86 @@ int main() {
   Gallery s2("test_v1", dim);
   s2.load(path);
   CHECK(s2.entries().size() == 3 && s2.nextId() == "user_0008");
+  CHECK(s2.entries()[0].id == "user_0001" && s2.entries()[1].id == "admin" && s2.entries()[2].id == "user_12abc");
+  // SQLite leaves its journal beside the database only while a write is running
   for (const auto& e : std::filesystem::directory_iterator(std::filesystem::path(path).parent_path()))
-    CHECK_MSG(e.path().filename().string().rfind("palm_test_gallery.bin.tmp", 0) != 0, "left over %s",
+    CHECK_MSG(e.path().filename().string().rfind("palm_test_gallery.db-", 0) != 0, "left over %s",
               e.path().string().c_str());
 
-  // version 1 files (no counter) still load; the counter comes from the ids
-  {
-    std::ofstream v1(path, std::ios::binary | std::ios::trunc);
-    const auto u32 = [&](uint32_t v) { v1.write(reinterpret_cast<const char*>(&v), 4); };
-    const auto str = [&](const std::string& t) {
-      u32(static_cast<uint32_t>(t.size()));
-      v1.write(t.data(), static_cast<std::streamsize>(t.size()));
-    };
-    v1.write("PALMGAL1", 8);
-    str("test_v1");
-    u32(dim);
-    u32(2);
-    for (const char* who : {"user_05", "bob"}) {
-      str(who);
-      u32(5);
-      const Vec t = unit(dim, 1);
-      v1.write(reinterpret_cast<const char*>(t.data()), dim * sizeof(float));
-    }
+  // a database edited behind the Gallery's back: every inconsistency is Corrupt, the gallery stays as it was
+  const auto corrupt = [&](const char* what, const char* sql) {
+    std::filesystem::remove(path);
+    s.save(path);
+    sqlite3* db = nullptr;
+    CHECK(sqlite3_open(path.c_str(), &db) == SQLITE_OK);
+    char* err = nullptr;
+    CHECK_MSG(sqlite3_exec(db, sql, nullptr, nullptr, &err) == SQLITE_OK, "%s: %s", what, err ? err : "");
+    sqlite3_free(err);
+    sqlite3_close(db);
+    Gallery t("test_v1", dim);
+    t.upsert({"keep", {unit(dim, 0)}});
+    CHECK_MSG(throwsKind([&] { t.load(path); }, GalleryError::Kind::Corrupt), "%s", what);
+    CHECK_MSG(t.entries().size() == 1 && t.entries()[0].id == "keep", "%s", what);
+  };
+  corrupt("short blob", "UPDATE samples SET embedding = zeroblob(3) WHERE user_id = 'admin'");
+  corrupt("text blob", "UPDATE samples SET embedding = 'abc' WHERE user_id = 'admin'");
+  corrupt("user without samples", "INSERT INTO users(id) VALUES('ghost')");
+  corrupt("sample gap", "UPDATE samples SET idx = 1 WHERE user_id = 'admin'");
+  corrupt("no dim", "DELETE FROM meta WHERE key = 'dim'");
+  corrupt("bad next_seq", "UPDATE meta SET value = 'x' WHERE key = 'next_seq'");
+  corrupt("version 0", "PRAGMA user_version = 0");
+  {  // a newer schema is not corruption: the file must not be moved away
+    std::filesystem::remove(path);
+    s.save(path);
+    sqlite3* db = nullptr;
+    CHECK(sqlite3_open(path.c_str(), &db) == SQLITE_OK);
+    CHECK(sqlite3_exec(db, "PRAGMA user_version = 99", nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+    CHECK(throwsKind([&] { Gallery("test_v1", dim).load(path); }, GalleryError::Kind::Version));
+    CHECK(throwsKind([&] { s.save(path); }, GalleryError::Kind::Version));
   }
-  Gallery old("test_v1", dim);
-  old.load(path);
-  CHECK(old.entries().size() == 2 && old.entries()[1].id == "bob" && old.nextId() == "user_0006");
-  CHECK(old.entries()[1].samples.size() == 1 && old.entries()[1].samples[0] == unit(dim, 1));  // the mean template
 
-  // a v3 entry with a sample count of 0 is corrupt
-  {
-    std::ofstream v3(path, std::ios::binary | std::ios::trunc);
-    const auto u32 = [&](uint32_t v) { v3.write(reinterpret_cast<const char*>(&v), 4); };
-    v3.write("PALMGAL3", 8);
-    u32(7);
-    v3.write("test_v1", 7);
-    u32(dim);
-    u32(1);
-    u32(1);
-    u32(1);
-    v3.write("x", 1);
-    u32(0);
+  // files that are not a gallery database (the old PALMGAL format among them) are Corrupt and never overwritten
+  for (const char* junk : {"PALMGAL3 old format", "not a gallery", "SQLite format 2"}) {
+    { std::ofstream(path, std::ios::binary | std::ios::trunc) << junk; }
+    Gallery t("test_v1", dim);
+    t.upsert({"keep", {unit(dim, 0)}});
+    CHECK_MSG(throwsKind([&] { t.load(path); }, GalleryError::Kind::Corrupt), "%s", junk);
+    CHECK(t.entries().size() == 1);
+    CHECK_MSG(throwsKind([&] { t.save(path); }, GalleryError::Kind::Corrupt), "%s", junk);
+    std::ifstream in(path, std::ios::binary);
+    std::string kept((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK_MSG(kept == junk, "%s overwritten", junk);
   }
-  threw = false;
-  try {
-    old.load(path);
-  } catch (const std::exception&) {
-    threw = true;
+  {  // a database cut short is Corrupt too
+    std::filesystem::remove(path);
+    s.save(path);
+    std::filesystem::resize_file(path, 200);
+    Gallery t("test_v1", dim);
+    CHECK(throwsKind([&] { t.load(path); }, GalleryError::Kind::Corrupt));
   }
-  CHECK(threw && old.entries().size() == 2);
 
-  // a corrupt file throws and leaves the gallery as it was
-  { std::ofstream(path, std::ios::binary | std::ios::trunc) << "PALMGAL2 truncated"; }
-  threw = false;
-  try {
-    old.load(path);
-  } catch (const std::exception&) {
-    threw = true;
+  // another connection holds the write lock: save waits, then reports Busy and the old content survives
+  {
+    std::filesystem::remove(path);
+    s.save(path);
+    sqlite3* db = nullptr;
+    CHECK(sqlite3_open(path.c_str(), &db) == SQLITE_OK);
+    CHECK(sqlite3_exec(db, "BEGIN EXCLUSIVE", nullptr, nullptr, nullptr) == SQLITE_OK);
+    Gallery t("test_v1", dim);
+    t.setBusyTimeoutMs(100);
+    t.upsert({"late", {unit(dim, 5)}});
+    CHECK(throwsKind([&] { t.save(path); }, GalleryError::Kind::Busy));
+    CHECK(throwsKind([&] { t.load(path); }, GalleryError::Kind::Busy));
+    CHECK(sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr) == SQLITE_OK);
+    sqlite3_close(db);
+    Gallery u("test_v1", dim);
+    u.load(path);
+    CHECK(u.entries().size() == 3 && !u.contains("late"));
+    t.save(path);  // free again
+    u.load(path);
+    CHECK(u.contains("late"));
   }
-  CHECK(threw && old.entries().size() == 2 && old.nextId() == "user_0006");
   std::filesystem::remove(path);
 
   return finish("test_gallery");
