@@ -109,5 +109,5 @@ set_tests_properties(parity PROPERTIES SKIP_RETURN_CODE 77)
 add_executable(test_api tests/test_api.cpp)
 target_link_libraries(test_api PRIVATE palm)
 add_test(NAME api COMMAND test_api ${CMAKE_CURRENT_SOURCE_DIR}/config.yaml
-         ${CMAKE_CURRENT_SOURCE_DIR}/../log_label.csv ${CMAKE_CURRENT_SOURCE_DIR}/../output/original)
+         ${CMAKE_CURRENT_SOURCE_DIR}/../data/log_label.csv ${CMAKE_CURRENT_SOURCE_DIR}/../output/original)
 set_tests_properties(api PROPERTIES SKIP_RETURN_CODE 77)

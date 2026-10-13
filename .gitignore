@@ -15,10 +15,8 @@ output/
 
 # Model weights and large binary assets (not pushed)
 models/
-binary/models/
-binary/palm_cli
-binary/palm_gui
-binary/gallery.bin
+# cmake --install output (palm-enroll/deploy is the source)
+binary/
 *.onnx
 *.mat
 *.f32

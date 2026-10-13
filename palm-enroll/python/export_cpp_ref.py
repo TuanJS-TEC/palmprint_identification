@@ -26,7 +26,7 @@ FLIP_HANDEDNESS = "Right"  # mirrored in the reference so the C++ flip path is t
 
 
 def cases():
-    rows = list(csv.DictReader(open(os.path.join(ROOT, "log_label.csv"), encoding="utf-8"), delimiter=";"))
+    rows = list(csv.DictReader(open(os.path.join(ROOT, "data", "log_label.csv"), encoding="utf-8"), delimiter=";"))
     hands, people, count = [], set(), {"Left": 0, "Right": 0}
     for r in rows:  # two Left and two Right hand crops, all from different people
         path = os.path.join(ROOT, "output", "hand_crop", r["filename"] + ".jpg")

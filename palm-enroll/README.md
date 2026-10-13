@@ -1,6 +1,6 @@
 # palm-enroll
 
-Pipeline C++ trích đặc trưng lòng bàn tay 512 chiều (EE-PRnet, Matkowski et al., IEEE TIFS 2019) từ ảnh crop bàn tay, gộp nhiều mẫu thành template và nhận dạng 1:N. Có giao diện Qt (`palm_gui`) dùng camera thật: phát hiện tay, đăng ký tay phải và nhận dạng. Model: `../models/EE_PRnet-epoch-60.onnx`, do `../convert_mat_to_onnx.py` tạo, cùng hai model MediaPipe phát hiện tay (OpenCV Zoo, Apache-2.0).
+Pipeline C++ trích đặc trưng lòng bàn tay 512 chiều (EE-PRnet, Matkowski et al., IEEE TIFS 2019) từ ảnh crop bàn tay, gộp nhiều mẫu thành template và nhận dạng 1:N. Có giao diện Qt (`palm_gui`) dùng camera thật: phát hiện tay, đăng ký tay phải và nhận dạng. Model: `../models/EE_PRnet-epoch-60.onnx`, do `../scripts/convert_mat_to_onnx.py` tạo, cùng hai model MediaPipe phát hiện tay (OpenCV Zoo, Apache-2.0).
 
 Phụ thuộc: OpenCV 4 (core, imgproc, imgcodecs, videoio), ONNX Runtime ≥ 1.16 (CPU), C++17, CMake ≥ 3.18. Qt 5 Widgets là tùy chọn: thiếu thì không build `palm_gui`.
 
@@ -12,7 +12,7 @@ cmake --install build --prefix ../binary   # chương trình + config + models v
 ../binary/run_gui.sh --vnc                 # xem từ xa qua VNC, cổng 5900
 ```
 
-Hướng dẫn cho người test nằm trong `binary/README.txt`. Mỗi khung hình đi qua: phát hiện tay (palm detector + 21 landmark), kiểm tra tay phải và lòng bàn tay hướng camera, kích thước, nằm trọn trong ảnh, độ rung, độ nét, rồi cắt khung bàn tay và chạy EE-PRnet. Tham số thử nghiệm:
+Hướng dẫn cho người test nằm trong `deploy/README.txt`. Mỗi khung hình đi qua: phát hiện tay (palm detector + 21 landmark), kiểm tra tay phải và lòng bàn tay hướng camera, kích thước, nằm trọn trong ảnh, độ rung, độ nét, rồi cắt khung bàn tay và chạy EE-PRnet. Tham số thử nghiệm:
 - `--source ảnh|video [--mirrored]`: dùng ảnh hoặc video thay camera.
 - `--enroll ID` / `--identify`: vào thẳng chế độ đăng ký hoặc nhận dạng.
 - `--verbose`: in thời gian xử lý mỗi giây.
@@ -40,7 +40,7 @@ Mỗi người chỉ đăng ký **một tay, là tay phải**. `enroll` và `ide
 
 ```bash
 # đo trên các ảnh tay phải của tập có nhãn, in ngưỡng gợi ý cho config.yaml
-./build/palm_eval --labels ../log_label.csv --images ../output/hand_crop \
+./build/palm_eval --labels ../data/log_label.csv --images ../output/hand_crop \
                   [--enroll 5] [--scores s.csv] [--roi-sheet rois.jpg]
 
 ./build/palm_cli enroll   --id P01 --label Left img1.jpg ...  # >= template.min_valid mẫu tốt
@@ -53,7 +53,7 @@ Mỗi người chỉ đăng ký **một tay, là tay phải**. `enroll` và `ide
 ./build/palm_cli check    [--mirrored] frame.jpg              # -> user_0001 | palm not recognised
 
 # kiểm tra bộ phát hiện tay trên ảnh gốc có nhãn (nhãn, phía lòng bàn tay, landmark ra CSV)
-./build/palm_handcheck --labels ../log_label.csv --images ../output/original --mirrored [--out hands.csv]
+./build/palm_handcheck --labels ../data/log_label.csv --images ../output/original --mirrored [--out hands.csv]
 ```
 
 `enroll` từ chối khi: ID đã đăng ký (dùng `--force` để thay template), hoặc template khớp một người khác trên `dup_cos_max`, tức cùng bàn tay đăng ký dưới hai tên. Mọi lệnh nhận `--config`, mặc định là `config.yaml` trong thư mục hiện tại, và `--gallery PATH` để dùng gallery khác với gallery trong config.

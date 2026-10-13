@@ -37,7 +37,7 @@ triangle filter widened for downsampling, borders replicated
     out roi         [N,3,112,112]
 
 Usage:
-  venv/bin/python convert_mat_to_onnx.py [--opset 17]
+  venv/bin/python scripts/convert_mat_to_onnx.py [--opset 17]
 """
 import argparse
 import os
@@ -49,7 +49,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AVERAGE_IMAGE = (123.68, 116.78, 103.94)  # buildFeat.m: avimnet
 
 MODELS = {

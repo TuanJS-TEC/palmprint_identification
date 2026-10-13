@@ -7,7 +7,7 @@ original formula from TpsGridGenerator.m, so it shares no code with the
 PyTorch graph used for export.
 
 Usage:
-  venv/bin/python verify_onnx.py
+  venv/bin/python scripts/verify_onnx.py
 """
 import glob
 import os
@@ -18,7 +18,7 @@ import onnxruntime as ort
 import scipy.io as sio
 from PIL import Image
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEMO = os.path.join(ROOT, "Palmprint-Recognition-in-the-Wild-master/databases/NTU-PI-demo/flip/img")
 AVG = np.array([123.68, 116.78, 103.94], np.float32)
 
