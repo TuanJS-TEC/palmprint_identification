@@ -33,3 +33,7 @@ Palmprint-Recognition-in-the-Wild-master/
 
 # Local tool settings
 .claude/
+
+# IDE settings and runtime logs
+.idea/
+*.log

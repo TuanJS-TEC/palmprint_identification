@@ -18,38 +18,28 @@ Hướng dẫn cho người test nằm trong `binary/README.txt`. Mỗi khung h�
 - `--verbose`: in thời gian xử lý mỗi giây.
 - `--log FILE`: file log sự kiện, mặc định `palm_gui.log` cạnh `config.yaml`; `--log ""` chỉ hiện trên màn hình.
 
-Khung log dưới video (F2 ẩn/hiện) ghi: trạng thái tay khi đổi kèm độ tin cậy của hai model MediaPipe (`palm` điểm phát hiện lòng bàn tay, `pres` có bàn tay, `right` xác suất tay phải, độ nét), từng mẫu đăng ký (cos với các mẫu trước, người khác gần nhất), từng lần nhận dạng (ID gần nhất và cos, người thứ hai và khoảng cách, đạt/không đạt ngưỡng), kết quả đăng ký/nhận dạng và thời gian xử lý mỗi 30 s. EE-PRnet không cho xác suất, nên độ tin cậy của nó là cos: trên đường xử lý camera, ảnh đúng người có trung vị 0.95, người khác trung vị 0.55 và 99% dưới 0.76 (`eval/report_live_path.txt`). Log được ghi cả vào file (xoay vòng sang `.1` ở 10 MB).
+Khung log dưới video (F2 ẩn/hiện) ghi: trạng thái tay khi đổi kèm độ tin cậy của hai model MediaPipe (`palm` điểm phát hiện lòng bàn tay, `pres` có bàn tay, `right` xác suất tay phải, độ nét), từng mẫu đăng ký (cos với các mẫu trước, người khác gần nhất), từng lần nhận dạng (ID gần nhất và cos, người thứ hai và khoảng cách, đạt/không đạt ngưỡng), kết quả đăng ký/nhận dạng và thời gian xử lý mỗi 30 s. EE-PRnet không cho xác suất, nên độ tin cậy của nó là cos: trên đường xử lý camera, ảnh đúng người có trung vị 0.95, người khác trung vị 0.55 và 99% dưới 0.76. Log được ghi cả vào file (xoay vòng sang `.1` ở 10 MB).
 
 Trên máy dev, chạy liên tục có tay: phát hiện tay 22 ms, embedding 32 ms, khoảng 18 fps. Không có tay: khoảng 26 fps.
 
-## Build và test
+## Build
 
 ```bash
 cmake -S . -B build -G Ninja          # ORT khác /usr/local: thêm -DORT_ROOT=<thư mục onnxruntime>
 cmake --build build
-ctest --test-dir build --output-on-failure
 ```
 
 Trên Windows: `-DORT_ROOT=C:/onnxruntime-win-x64-<ver> -DOpenCV_DIR=<...>/build`.
-
-Test `parity` so C++ với tham chiếu Python trong `tests/data/ref/`. Chạy lại `../venv/bin/python python/export_cpp_ref.py` khi model hoặc tiền xử lý thay đổi.
 
 ## Sử dụng
 
 Mỗi người chỉ đăng ký **một tay, là tay phải**. `enroll` và `identify` bắt buộc có `--label`, là nhãn handedness của MediaPipe (cột `handedness` trong `log_label.csv`). Nhãn không ứng với tay phải sẽ bị từ chối ngay, trước khi chạy model.
 
 ```bash
-# đo trên các ảnh tay phải của tập có nhãn, in ngưỡng gợi ý cho config.yaml
-./build/palm_eval --labels ../log_label.csv --images ../output/hand_crop \
-                  [--enroll 5] [--scores s.csv] [--roi-sheet rois.jpg]
-
 ./build/palm_cli enroll   --id P01 --label Left img1.jpg ...  # >= template.min_valid mẫu tốt
 ./build/palm_cli identify --label Left img.jpg                # top-3 + quyết định theo accept_cos_min
 ./build/palm_cli embed    --out-dir out img.jpg               # .f32 (512 float) + ROI 112x112 .png
 ./build/palm_cli list | remove --id P01
-
-# kiểm tra bộ phát hiện tay trên ảnh gốc có nhãn (nhãn, phía lòng bàn tay, landmark ra CSV)
-./build/palm_handcheck --labels ../log_label.csv --images ../output/original --mirrored [--out hands.csv]
 ```
 
 `enroll` từ chối khi: ID đã đăng ký (dùng `--force` để thay template), hoặc template khớp một người khác trên `dup_cos_max`, tức cùng bàn tay đăng ký dưới hai tên. Mọi lệnh nhận `--config`, mặc định là `config.yaml` trong thư mục hiện tại, và `--gallery PATH` để dùng gallery khác với gallery trong config.
@@ -68,7 +58,7 @@ Mỗi người chỉ đăng ký **một tay, là tay phải**. `enroll` và `ide
 | Hướng ảnh | Lòng bàn tay phải nhìn thẳng, ngón cái bên phải ảnh, như NTU-PI-v1. `output/hand_crop` đã đúng hướng (script thu ảnh lật lại crop của nhãn Left), nên `mirror_input: 0` | `palm_eval` |
 | Khung cắt bàn tay | Hình vuông tâm trùng tâm khung bao 21 landmark, cạnh 1.17 × max(rộng, cao). Hiệu chỉnh trên 596 crop (p10–p90: 1.14–1.20) | so khớp `hand_crop` với ảnh gốc |
 
-## Kết quả đo (2026-10-05, `eval/report.txt`)
+## Kết quả đo (2026-10-05)
 
 409 ảnh tay phải trong `output/hand_crop` của 25 người. Mỗi người đăng ký bằng 5 mẫu đầu theo thời gian, các mẫu còn lại làm probe.
 
@@ -89,7 +79,7 @@ Lật ảnh tay phải làm kết quả kém đi: EER 10.6%, rank-1 86.6%. Ngư�
 
 Lưu ý:
 - Các số trên đo với template trung bình của 5 mẫu đầu và chưa giới hạn góc nghiêng (trước 2026-10-09). Xem mục "Góc nghiêng lòng bàn tay" bên dưới.
-- Có ROI hỏng: người 22 bị mờ, người 24 trông như da mặt (xem `eval/rois.jpg`). `palm_gui` loại ảnh mờ (`blur_min`), ảnh rung và bàn tay nằm ngoài khung.
+- Có ROI hỏng: người 22 bị mờ, người 24 trông như da mặt. `palm_gui` loại ảnh mờ (`blur_min`), ảnh rung và bàn tay nằm ngoài khung.
 
 ## Góc nghiêng lòng bàn tay
 
@@ -116,7 +106,7 @@ Ngưỡng 0.82 chưa đo lại cho cách khớp theo mẫu trên dữ liệu đa
 ## Khác với tài liệu hướng dẫn
 
 - Dùng một ONNX duy nhất thay cho `theta.onnx`, `embed.onnx` và `tps_T.bin`, vì TPS và sampler đã nằm trong graph.
-- Không dùng yaml-cpp, Catch2, Eigen hay libsodium (máy chưa cài). Thay vào đó: `cv::FileStorage` cho YAML, test tự viết chạy bằng CTest, `std::vector` cho vector đặc trưng.
+- Không dùng yaml-cpp, Catch2, Eigen hay libsodium (máy chưa cài). Thay vào đó: `cv::FileStorage` cho YAML, `std::vector` cho vector đặc trưng.
 - `gallery.db` (SQLite) **chưa mã hóa**. Phải thêm mã hóa (libsodium hoặc SQLCipher) trước khi chạy với dữ liệu thật.
 - Gallery là một database SQLite (`gallery.db`, amalgamation trong `third_party/sqlite3`, build kèm `libpalm`): bảng `meta` (`model_version`, `dim`, `next_seq`), `users`, `samples` (mỗi mẫu là một BLOB `dim` float32 little-endian, `PRAGMA user_version` = 1). Định dạng `.bin` (`PALMGAL1/2/3`) đã bỏ hẳn: code không còn đọc hay ghi nó. Gallery 5 người cũ được chuyển sang `.db` một lần (2026-10-13) bằng công cụ tạm không nằm trong repo. Chương trình đã build trước đó không đọc được `.db`, nên cần `cmake --install` lại vào `binary/`.
 

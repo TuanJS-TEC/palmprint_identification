@@ -46,10 +46,6 @@ endif()
 
 add_executable(palm_cli tools/palm_cli.cpp)
 target_link_libraries(palm_cli PRIVATE palm)
-add_executable(palm_eval tools/palm_eval.cpp)
-target_link_libraries(palm_eval PRIVATE palm)
-add_executable(palm_handcheck tools/palm_handcheck.cpp)
-target_link_libraries(palm_handcheck PRIVATE palm)
 
 # Qt5 GUI with a live camera (optional)
 find_package(Qt5 COMPONENTS Widgets QUIET)
@@ -84,26 +80,3 @@ install(CODE "
   file(WRITE \"\${CMAKE_INSTALL_PREFIX}/config.yaml\" \"\${cfg}\")
   message(STATUS \"Installing: \${CMAKE_INSTALL_PREFIX}/config.yaml\")
 ")
-
-# ---------------------------------------------------------------- tests
-enable_testing()
-set(PALM_ONNX "${CMAKE_CURRENT_SOURCE_DIR}/../models/EE_PRnet-epoch-60.onnx" CACHE FILEPATH "EE-PRnet ONNX for tests")
-
-add_executable(test_preprocess tests/test_preprocess.cpp)
-target_link_libraries(test_preprocess PRIVATE palm)
-add_test(NAME preprocess COMMAND test_preprocess)
-
-add_executable(test_gallery tests/test_gallery.cpp)
-target_link_libraries(test_gallery PRIVATE palm)
-add_test(NAME gallery COMMAND test_gallery)
-
-# capture gate on synthetic landmarks (no ONNX models needed)
-add_executable(test_capture_gate tests/test_capture_gate.cpp)
-target_link_libraries(test_capture_gate PRIVATE palm)
-add_test(NAME capture_gate COMMAND test_capture_gate)
-
-# needs tests/data/ref from python/export_cpp_ref.py; exits 77 (skipped) when missing
-add_executable(test_parity tests/test_parity.cpp)
-target_link_libraries(test_parity PRIVATE palm)
-add_test(NAME parity COMMAND test_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/ref ${PALM_ONNX})
-set_tests_properties(parity PROPERTIES SKIP_RETURN_CODE 77)

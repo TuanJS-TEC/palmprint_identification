@@ -3,7 +3,7 @@
 # palm-enroll configuration (OpenCV FileStorage YAML: keep the %YAML:1.0 line).
 # Relative paths are resolved against the directory of this file.
 # Thresholds were measured with palm_eval on the right hands in output/hand_crop
-# (409 images, 25 people, 2026-10-05, report in eval/); re-measure when the
+# (409 images, 25 people, 2026-10-05); re-measure when the
 # camera, the hand crop or the model changes.
 model:
   onnx: "../models/EE_PRnet-epoch-60.onnx"   # from convert_mat_to_onnx.py
