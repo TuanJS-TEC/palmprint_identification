@@ -1,12 +1,9 @@
-// palm_cli: embed / enroll / identify / list / remove on hand-crop images,
-// register / check on full camera frames.
+// palm_cli: embed / enroll / identify / list / remove on hand-crop images.
 //
-// embed, enroll and identify take hand crops (whole hand, as in
-// output/hand_crop). Only the physical right hand is enrolled and identified,
-// one template per person: enroll and identify need the MediaPipe handedness
-// label (--label), mapped to the physical hand by hand.right_label in
-// config.yaml. register and check go through the C API (palm_api.h) like an
-// app would: hand detection, right-palm checks and crop happen inside.
+// The images are hand crops (whole hand, as in output/hand_crop). Only the
+// physical right hand is enrolled and identified, one template per person:
+// enroll and identify need the MediaPipe handedness label (--label), mapped to
+// the physical hand by hand.right_label in config.yaml.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -21,7 +18,6 @@
 #include "args.h"
 #include "config.h"
 #include "gallery.h"
-#include "palm_api.h"
 #include "palm_model.h"
 
 namespace fs = std::filesystem;
@@ -36,11 +32,8 @@ const char* kUsage = R"(usage: palm_cli <command> [--config config.yaml] [option
   embed    [--out-dir DIR] IMAGE...                       features (.f32) + ROI (.png)
   list
   remove   --id ID
-  register [--mirrored] FRAME...                          full camera frames of one new user -> new id
-  check    [--mirrored] FRAME...                          full camera frame -> enrolled id
 --label: MediaPipe handedness of the images (the physical right hand is
          hand.right_label in config.yaml). --flip: mirror the images first.
---mirrored: the frames are mirror images of the camera view (output/original).
 --gallery PATH: use this gallery instead of the one in the config.
 )";
 
@@ -155,91 +148,6 @@ int cmdIdentify(PalmModel& model, const Config& cfg, const Args& a) {
   return 0;
 }
 
-// ---- register / check through the C API
-struct Api {
-  PalmHandle h = nullptr;
-  Api(const std::string& configPath, const std::string& galleryPath) {
-    PalmInitOptions o{};
-    o.config_path = configPath.c_str();
-    o.gallery_path = galleryPath.c_str();
-    if (palm_init(&o, &h) != PALM_OK) throw std::runtime_error(palm_last_error(nullptr));
-  }
-  ~Api() { palm_release(h); }
-  Api(const Api&) = delete;
-  Api& operator=(const Api&) = delete;
-};
-
-PalmFrame bgrFrame(const cv::Mat& m, bool mirrored) {
-  PalmFrame f{};
-  f.data = m.data;
-  f.size = m.step * m.rows;
-  f.width = m.cols;
-  f.height = m.rows;
-  f.stride = static_cast<int>(m.step);
-  f.format = PALM_FMT_BGR;
-  f.mirrored = mirrored;
-  return f;
-}
-
-int cmdRegister(Api& api, const Args& a) {
-  std::vector<std::string> names;
-  std::vector<cv::Mat> imgs;
-  for (const auto& p : a.pos) {
-    cv::Mat m = cv::imread(p, cv::IMREAD_COLOR);
-    if (m.empty()) {
-      std::cerr << "skip (cannot read): " << p << "\n";
-      continue;
-    }
-    names.push_back(p);
-    imgs.push_back(std::move(m));
-  }
-  if (imgs.empty()) throw std::runtime_error("register: no readable frame");
-  std::vector<PalmFrame> frames;
-  for (const auto& m : imgs) frames.push_back(bgrFrame(m, a.has("mirrored")));
-  std::vector<int> status(frames.size(), -1);
-  char id[PALM_ID_MAX];
-  float score = 0;
-  const int s =
-      palm_register(api.h, frames.data(), static_cast<int>(frames.size()), id, sizeof id, &score, status.data());
-  for (size_t i = 0; i < names.size(); ++i)
-    if (status[i] >= 0) std::printf("  %-60s %s\n", names[i].c_str(), palm_status_text(status[i]));
-  if (s == PALM_OK) {
-    std::printf("register: OK %s (closest other user: cos %.3f)\n", id, score);
-    return 0;
-  }
-  if (s == PALM_ERR_ALREADY_REGISTERED) {
-    std::printf("register: ALREADY_REGISTERED as %s (cos %.3f)\n", id, score);
-    return 3;
-  }
-  std::printf("register: FAILED, %s: %s\n", palm_status_text(s), palm_last_error(api.h));
-  return 2;
-}
-
-int cmdCheck(Api& api, const Args& a) {
-  int failed = 0;
-  for (const auto& p : a.pos) {
-    const cv::Mat m = cv::imread(p, cv::IMREAD_COLOR);
-    if (m.empty()) {
-      std::cerr << "skip (cannot read): " << p << "\n";
-      ++failed;
-      continue;
-    }
-    const PalmFrame f = bgrFrame(m, a.has("mirrored"));
-    char id[PALM_ID_MAX];
-    float score = 0;
-    const auto t0 = std::chrono::steady_clock::now();
-    const int s = palm_check_register(api.h, &f, id, sizeof id, &score);
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    if (s == PALM_OK) {
-      std::printf("%s  %.1f ms  -> %s  cos %.3f\n", p.c_str(), ms, id, score);
-    } else {
-      std::printf("%s  %.1f ms  -> %s (%s)\n", p.c_str(), ms, palm_status_text(s), palm_last_error(api.h));
-      ++failed;
-    }
-  }
-  return failed ? 2 : 0;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -249,14 +157,10 @@ int main(int argc, char** argv) {
   }
   const std::string cmd = argv[1];
   try {
-    const Args a(argc, argv, 2, {"flip", "force", "mirrored"});
+    const Args a(argc, argv, 2, {"flip", "force"});
     const std::string configPath = a.get("config", "config.yaml");
     Config cfg = loadConfig(configPath);
     if (a.has("gallery")) cfg.galleryPath = a.get("gallery");
-    if (cmd == "register" || cmd == "check") {
-      Api api(configPath, cfg.galleryPath);
-      return cmd == "register" ? cmdRegister(api, a) : cmdCheck(api, a);
-    }
     if (cmd == "list" || cmd == "remove") {
       Gallery g(cfg.modelVersion);
       g.load(cfg.galleryPath);

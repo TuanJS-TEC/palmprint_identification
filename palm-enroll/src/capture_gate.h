@@ -1,7 +1,6 @@
 #pragma once
 // Enrollment capture gate: decides when a hand is good enough to take an
-// embedding, on top of checkHand(). Plain C++ and OpenCV only (no GUI, no Qt),
-// so the C API can reuse the same rules later.
+// embedding, on top of checkHand(). Plain C++ and OpenCV only (no GUI, no Qt).
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -66,7 +65,7 @@ struct GateReport {
   float fingerOpen = 0.f; // see GateLimits::minFingerOpen
   float mean = 0.f;       // palm gray level
   float satFrac = 0.f;    // saturated palm pixels
-  // cv::Mat lightDebug;     // BGR 64x64: palm pixels of the light check, saturated ones red; empty if not measured
+  cv::Mat lightDebug;     // BGR 64x64: palm pixels of the light check, saturated ones red; empty if not measured
 
   // Every check passed on this frame (identification needs no stable window).
   bool framePasses() const { return status == GateStatus::Stabilizing || status == GateStatus::Ready; }

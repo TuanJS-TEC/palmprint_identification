@@ -49,7 +49,7 @@ float fingerOpen(const HandLandmarks& h, float palmLen) {
 struct PalmLight {
   float mean = 0.f;     // gray level 0..255
   float satFrac = 0.f;  // share of pixels >= 250
-  // cv::Mat debug;        // BGR kSample x kSample: gray inside the palm polygon, saturated pixels red
+  cv::Mat debug;        // BGR kSample x kSample: gray inside the palm polygon, saturated pixels red
 };
 
 // Light measured only inside the palm polygon, so a white wall or a shadow behind
@@ -82,11 +82,11 @@ PalmLight palmLight(const cv::Mat& frame, const HandLandmarks& h) {
   cv::compare(gray, 250, sat, cv::CMP_GE);
   cv::bitwise_and(sat, mask, sat);
   out.satFrac = static_cast<float>(cv::countNonZero(sat)) / area;
-  // cv::Mat gray3;
-  // cv::cvtColor(gray, gray3, cv::COLOR_GRAY2BGR);
-  // out.debug = cv::Mat::zeros(kSample, kSample, CV_8UC3);
-  // gray3.copyTo(out.debug, mask);
-  // out.debug.setTo(cv::Scalar(0, 0, 255), sat);
+  cv::Mat gray3;
+  cv::cvtColor(gray, gray3, cv::COLOR_GRAY2BGR);
+  out.debug = cv::Mat::zeros(kSample, kSample, CV_8UC3);
+  gray3.copyTo(out.debug, mask);
+  out.debug.setTo(cv::Scalar(0, 0, 255), sat);
   return out;
 }
 
@@ -170,7 +170,7 @@ GateReport CaptureGate::update(const cv::Mat& frame, const HandCheck& chk, const
   const PalmLight light = palmLight(frame, h);
   r.mean = light.mean;
   r.satFrac = light.satFrac;
-  // r.lightDebug = light.debug;
+  r.lightDebug = light.debug;
 
   // 2. whole hand in the frame (checkHand's OutOfFrame is about the crop box)
   if (chk.state == HandState::OutOfFrame || !insideFrame(h, frame.size(), lim_.edgeMargin)) return fail(GateStatus::CutOff);

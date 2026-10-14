@@ -87,8 +87,6 @@ bool parseUserSeq(const std::string& id, uint32_t& n) {
 //   users(id)                   in enrollment order (rowid)
 //   samples(user_id, idx, embedding)   dim float32 (little-endian), idx = 0..n-1
 // Each load / save opens its own connection, so a Gallery holds no handle.
-// journal_mode stays DELETE: every commit changes the database file itself,
-// which is what palm_api's file stamp watches (WAL would not).
 namespace {
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559, "embeddings are stored as IEEE float32");
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__

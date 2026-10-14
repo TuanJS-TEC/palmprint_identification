@@ -148,16 +148,22 @@ struct HandDetector::Impl {
   HandLandmarks landmarks(const cv::Mat& bgr, const Palm& p) {
     HandLandmarks r;
     r.palmScore = static_cast<float>(p.score);
-    r.palmBox = cv::Rect2f(cv::Point2f(p.p0), cv::Point2f(p.p1));
+    r.palmBox = cv::Rect2f(
+      cv::Point2f(p.p0),
+      cv::Point2f(p.p1)
+      );
 
     Crop c1 = cropAndPad(bgr, p.p0, p.p1, true);
     if (c1.img.empty()) return r;
     cv::Mat image;
     cv::cvtColor(c1.img, image, cv::COLOR_BGR2RGB);
     const cv::Point2d padBias(c1.bias);
-    const cv::Point2d bb0 = cv::Point2d(c1.p0) - padBias, bb1 = cv::Point2d(c1.p1) - padBias;
+    const cv::Point2d bb0 = cv::Point2d(c1.p0) - padBias;
+    const cv::Point2d bb1 = cv::Point2d(c1.p1) - padBias;
     std::array<cv::Point2d, 7> lm;
-    for (int k = 0; k < 7; ++k) lm[k] = p.kp[k] - padBias;
+    for (int k = 0; k < 7; ++k) {
+      lm[k] = p.kp[k] - padBias;
+    };
     double rad = CV_PI / 2 - std::atan2(-(lm[2].y - lm[0].y), lm[2].x - lm[0].x);
     rad -= 2 * CV_PI * std::floor((rad + CV_PI) / (2 * CV_PI));
     const double angle = rad * 180.0 / CV_PI;
