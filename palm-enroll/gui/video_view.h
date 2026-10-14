@@ -9,11 +9,11 @@
 class VideoView : public QWidget {
   Q_OBJECT
  public:
-  explicit VideoView(bool mirror, QWidget* parent = nullptr);
+  // lim: scale of the enrollment tilt map
+  VideoView(bool mirror, const palm::GateLimits& lim, QWidget* parent = nullptr);
   void setFrame(const FrameResult& r);
   void setMessage(const QString& text) { message_ = text; update(); }  // shown when no frame
   void setBanner(const QString& text, const QColor& color);            // session status, bottom
-  void setPoseLimits(const palm::GateLimits& lim) { lim_ = lim; }       // scale of the tilt map
 
  protected:
   void paintEvent(QPaintEvent*) override;

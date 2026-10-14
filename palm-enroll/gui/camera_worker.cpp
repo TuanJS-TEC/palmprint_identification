@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <cstdio>
 #include <mutex>
 #include <thread>
 
@@ -124,13 +123,10 @@ void CameraWorker::run() {
 
     std::unique_ptr<Grabber> grabber;
     if (still.empty()) grabber = std::make_unique<Grabber>(cap);
-    palm::HandLandmarks prev;
     palm::CaptureGate gate(cfg_.gate);
-    bool wasGated = false;
     auto lastEmbed = Clock::now() - std::chrono::hours(1);
-    auto tPrev = Clock::now(), tLog = Clock::now();
-    double fps = 0, sumDetect = 0, sumEmbed = 0;
-    int nFrames = 0, nEmbed = 0;
+    auto tPrev = Clock::now();
+    double fps = 0;
     long seen = 0;
     auto nextStill = Clock::now();
     cv::Mat frame;
@@ -154,30 +150,26 @@ void CameraWorker::run() {
       FrameResult r;
       const auto t0 = Clock::now();
       r.hand = det.detect(frame);
-      r.check = palm::checkHand(frame, r.hand, prev, cfg_.capture);
-      prev = r.hand;
       r.msDetect = msSince(t0);
 
       // the gate runs on every frame, so its stability window is full when enrollment starts
       const double nowMs = std::chrono::duration<double, std::milli>(Clock::now().time_since_epoch()).count();
-      r.gated = gated_;
-      if (r.gated != wasGated) gate.setCollecting(r.gated);  // a new enrollment starts with no pose taken
-      wasGated = r.gated;
-      r.gate = gate.update(frame, r.check, r.hand, nowMs);
-      if (!r.gate.lightDebug.empty()) r.lightDebug = toQImage(r.gate.lightDebug);
+      const Mode mode = mode_;
+      r.gated = mode == Mode::Enroll;
+      if (r.gated != gate.collecting()) gate.setCollecting(r.gated);  // a new enrollment starts with no pose taken
+      r.gate = gate.update(frame, r.hand, nowMs);
 
-      const int every = embedIntervalMs_;
+      const int every = r.gated ? cfg_.session.gapMs : 0;
       const bool ready = r.gated ? r.gate.status == palm::GateStatus::Ready : r.gate.framePasses();
-      if (every >= 0 && ready && msSince(lastEmbed) >= every) {
+      if (mode != Mode::Idle && ready && msSince(lastEmbed) >= every) {
         const auto t1 = Clock::now();
-        const cv::Mat crop = frame(r.check.box);
+        const cv::Mat crop = frame(r.gate.box);
         const palm::Embedding e = model.run(crop, false);  // camera frames are not mirrored
         r.feat = palm::l2normalize(e.feature);
         r.roi = rgbFloatToQImage(e.roi);
         cv::Mat thumb;
         cv::resize(crop, thumb, {112, 112}, 0, 0, cv::INTER_AREA);
         r.crop = toQImage(thumb);
-        r.embedded = true;
         r.msEmbed = msSince(t1);
         lastEmbed = Clock::now();
         if (r.gated) {
@@ -195,17 +187,6 @@ void CameraWorker::run() {
       tPrev = Clock::now();
       fps = fps == 0 ? 1000.0 / dt : 0.9 * fps + 0.1 * 1000.0 / dt;
       r.fps = fps;
-      if (verbose_) {
-        ++nFrames, sumDetect += r.msDetect;
-        if (r.embedded) ++nEmbed, sumEmbed += r.msEmbed;
-        if (msSince(tLog) >= 1000) {
-          std::fprintf(stderr, "[palm_gui] %.1f fps  hand %.1f ms  embed %.1f ms (%d)  state: %s\n", fps,
-                       sumDetect / nFrames, nEmbed ? sumEmbed / nEmbed : 0.0, nEmbed, palm::stateMessage(r.check.state));
-          tLog = Clock::now();
-          nFrames = nEmbed = 0;
-          sumDetect = sumEmbed = 0;
-        }
-      }
       emit frameReady(r);
     }
   } catch (const std::exception& e) {

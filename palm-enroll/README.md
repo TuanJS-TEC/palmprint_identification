@@ -15,7 +15,6 @@ cmake --install build --prefix ../binary   # chương trình + config + models v
 Hướng dẫn cho người test nằm trong `binary/README.txt`. Mỗi khung hình đi qua: phát hiện tay (palm detector + 21 landmark), kiểm tra tay phải và lòng bàn tay hướng camera, kích thước, nằm trọn trong ảnh, độ rung, độ nét, rồi cắt khung bàn tay và chạy EE-PRnet. Tham số thử nghiệm:
 - `--source ảnh|video [--mirrored]`: dùng ảnh hoặc video thay camera.
 - `--enroll ID` / `--identify`: vào thẳng chế độ đăng ký hoặc nhận dạng.
-- `--verbose`: in thời gian xử lý mỗi giây.
 - `--log FILE`: file log sự kiện, mặc định `palm_gui.log` cạnh `config.yaml`; `--log ""` chỉ hiện trên màn hình.
 
 Khung log dưới video (F2 ẩn/hiện) ghi: trạng thái tay khi đổi kèm độ tin cậy của hai model MediaPipe (`palm` điểm phát hiện lòng bàn tay, `pres` có bàn tay, `right` xác suất tay phải, độ nét), từng mẫu đăng ký (cos với các mẫu trước, người khác gần nhất), từng lần nhận dạng (ID gần nhất và cos, người thứ hai và khoảng cách, đạt/không đạt ngưỡng), kết quả đăng ký/nhận dạng và thời gian xử lý mỗi 30 s. EE-PRnet không cho xác suất, nên độ tin cậy của nó là cos: trên đường xử lý camera, ảnh đúng người có trung vị 0.95, người khác trung vị 0.55 và 99% dưới 0.76. Log được ghi cả vào file (xoay vòng sang `.1` ở 10 MB).

@@ -13,41 +13,39 @@
 
 #include "capture_gate.h"
 #include "config.h"
-#include "hand_crop.h"
 #include "hand_detector.h"
 
 struct FrameResult {
   QImage view;               // RGB888 camera frame (not mirrored), scaled for display
   double viewScale = 1.0;    // view pixels per camera pixel
   palm::HandLandmarks hand;  // camera pixels
-  palm::HandCheck check;
   bool gated = false;        // enrollment: Ready of the capture gate decides; else every frame it passes
-  palm::GateReport gate;
+  palm::GateReport gate;     // camera pixels
   std::vector<cv::Vec3f> taken;  // enrollment: palm normals of the samples taken so far
-  bool embedded = false;
-  std::vector<float> feat;   // L2-normalised fc1R feature
+  std::vector<float> feat;   // L2-normalised fc1R feature; empty if no embedding on this frame
   QImage roi;                // 112x112 aligned palm ROI the recogniser saw
   QImage crop;               // hand crop given to EE-PRnet (thumbnail)
-  QImage lightDebug;         // palm area of the light check, saturated pixels red; null without a hand
   double fps = 0, msDetect = 0, msEmbed = 0;
+
+  bool embedded() const { return !feat.empty(); }
 };
 Q_DECLARE_METATYPE(FrameResult)
 
 class CameraWorker : public QObject {
   Q_OBJECT
  public:
+  // Idle: no embeddings. Identify: an embedding on every frame the capture
+  // gate passes. Enroll: only on frames it reports Ready, each at a palm tilt
+  // not taken yet, at most one per session.gapMs.
+  enum class Mode { Idle, Identify, Enroll };
+
   // source: empty = camera cfg.camera.device; else a video file or an image
   // (an image is replayed as a still camera; mirrorSource un-mirrors it).
   CameraWorker(const palm::Config& cfg, std::string source, bool mirrorSource);
   ~CameraWorker() override;
 
   void stop() { stop_ = true; }
-  // -1: no embeddings, 0: every frame that passes the checks, > 0: at most one per interval
-  void setEmbedInterval(int ms) { embedIntervalMs_ = ms; }
-  // true (enrollment): embed only on frames the capture gate reports Ready,
-  // each at a palm tilt not taken yet; false: on every frame the gate passes
-  void setGated(bool g) { gated_ = g; }
-  void setVerbose(bool v) { verbose_ = v; }  // timing summary on stderr every second
+  void setMode(Mode m) { mode_ = m; }
 
  public slots:
   void run();  // blocking loop until stop()
@@ -62,7 +60,5 @@ class CameraWorker : public QObject {
   std::string source_;
   bool mirrorSource_;
   std::atomic<bool> stop_{false};
-  std::atomic<int> embedIntervalMs_{-1};
-  std::atomic<bool> gated_{false};
-  std::atomic<bool> verbose_{false};
+  std::atomic<Mode> mode_{Mode::Idle};
 };

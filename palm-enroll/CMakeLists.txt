@@ -34,7 +34,6 @@ add_library(palm
   src/gallery.cpp
   src/config.cpp
   src/hand_detector.cpp
-  src/hand_crop.cpp
   src/capture_gate.cpp)
 target_include_directories(palm PUBLIC src ${ORT_INCLUDE_DIR})
 target_link_libraries(palm PUBLIC ${OpenCV_LIBS} ${ORT_LIBRARY} sqlite3_palm)

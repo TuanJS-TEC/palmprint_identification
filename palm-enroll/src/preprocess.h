@@ -5,9 +5,6 @@
 
 namespace palm {
 
-// Largest centred crop of `in` with the aspect ratio of `out` (no stretching).
-cv::Rect vlCropGeometry(cv::Size in, cv::Size out);
-
 // rgb32f: CV_32FC3 (any channel count works), values 0..255.
 // Returns CV_32FC3 of size `out`, float, not rounded.
 cv::Mat vlResize(const cv::Mat& rgb32f, cv::Size out);

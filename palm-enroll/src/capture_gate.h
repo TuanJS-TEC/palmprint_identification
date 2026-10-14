@@ -1,11 +1,10 @@
 #pragma once
-// Enrollment capture gate: decides when a hand is good enough to take an
-// embedding, on top of checkHand(). Plain C++ and OpenCV only (no GUI, no Qt).
+// Capture gate of a live camera: decides when a hand is good enough to take an
+// embedding. Plain C++ and OpenCV only (no GUI, no Qt).
 #include <vector>
 
 #include <opencv2/core.hpp>
 
-#include "hand_crop.h"
 #include "hand_detector.h"
 
 namespace palm {
@@ -35,6 +34,10 @@ enum class GateStatus {
 const char* gateMessage(GateStatus s);  // Vietnamese UI text
 
 struct GateLimits {
+  float cropScale = 1.17f;    // hand crop side / landmark box (see handCropBox in capture_gate.cpp)
+  float minCropFrac = 0.33f;  // crop side / frame height
+  float maxMotion = 0.02f;    // landmark motion per frame, relative to the crop side
+  float blurMin = 0.f;        // Laplacian variance of the crop
   float edgeMargin = 0.02f;   // landmarks keep this fraction of the frame size from the edge
   float minPalmFrac = 0.15f;  // wrist -> middle knuckle / frame height (estimate, calibrate with the log)
   float maxPalmFrac = 0.30f;
@@ -57,6 +60,9 @@ struct GateLimits {
 struct GateReport {
   GateStatus status = GateStatus::NoHand;
   float progress = 0.f;   // 0..1 of the stability window, for the UI ring
+  cv::Rect box;           // hand crop box in the frame (what EE-PRnet gets); empty without a hand
+  float motion = 0.f;     // see GateLimits::maxMotion; 1e9 without a hand in the previous frame, 0 if not measured
+  float sharp = 0.f;      // see GateLimits::blurMin; 0 if not measured
   float palmFrac = 0.f;   // wrist -> middle knuckle / frame height
   float angleDeg = 0.f;   // in-plane rotation from upright
   float tiltDeg = 0.f;    // out-of-plane tilt of the palm plane
@@ -71,20 +77,14 @@ struct GateReport {
   bool framePasses() const { return status == GateStatus::Stabilizing || status == GateStatus::Ready; }
 };
 
-// Unit normal of the palm plane (least squares through the wrist and the four
-// knuckles of the world landmarks), in image axes and pointing towards the
-// camera (z <= 0). Zero vector for degenerate landmarks.
-cv::Vec3f palmNormal(const HandLandmarks& h);
-// Angle between two palm normals, degrees (90 if either is zero).
-float normalAngleDeg(const cv::Vec3f& a, const cv::Vec3f& b);
-
 class CaptureGate {
  public:
   explicit CaptureGate(const GateLimits& lim = {}) : lim_(lim) {}
 
-  // frame: non-mirrored camera frame; chk: checkHand() of the same frame and
-  // detection; nowMs: monotonic clock in milliseconds.
-  GateReport update(const cv::Mat& frame, const HandCheck& chk, const HandLandmarks& h, double nowMs);
+  // frame: non-mirrored camera frame (what the detector saw); h: its
+  // detection; nowMs: monotonic clock in milliseconds. Call on every frame:
+  // the motion check compares with the previous call.
+  GateReport update(const cv::Mat& frame, const HandLandmarks& h, double nowMs);
 
   // Starts a new stability window with the next frame (after each capture).
   void restart() { okSince_ = -1; okFrames_ = 0; }
@@ -102,10 +102,10 @@ class CaptureGate {
   // The palm normal (GateReport::normal) of a sample just taken.
   void addTaken(const cv::Vec3f& normal) { taken_.push_back(normal); }
   const std::vector<cv::Vec3f>& taken() const { return taken_; }
-  const GateLimits& limits() const { return lim_; }
 
  private:
   GateLimits lim_;
+  HandLandmarks prev_;  // detection of the previous frame (motion)
   bool collecting_ = false;
   std::vector<cv::Vec3f> taken_;
   double okSince_ = -1;  // start of the current run of good frames, -1 if none

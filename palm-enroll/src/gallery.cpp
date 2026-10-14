@@ -33,31 +33,21 @@ float dot(const Vec& a, const Vec& b) {
 TemplateResult buildTemplate(const std::vector<Vec>& feats, const TemplateParams& p) {
   TemplateResult r;
   const int n = static_cast<int>(feats.size());
-  if (n == 0) {
-    r.reason = "no_samples";
-    return r;
-  }
+  if (n == 0) return r;
   // medoid: the sample with the highest mean cosine to the others
   std::vector<float> meanCos(n, 0.f);
   for (int i = 0; i < n; ++i)
     for (int j = 0; j < n; ++j)
       if (i != j) meanCos[i] += dot(feats[i], feats[j]) / std::max(1, n - 1);
-  r.medoid = static_cast<int>(std::max_element(meanCos.begin(), meanCos.end()) - meanCos.begin());
+  const int medoid = static_cast<int>(std::max_element(meanCos.begin(), meanCos.end()) - meanCos.begin());
 
-  Vec sum(feats[0].size(), 0.f);
   for (int i = 0; i < n; ++i) {
-    const float c = dot(feats[i], feats[r.medoid]);
+    const float c = dot(feats[i], feats[medoid]);
     r.cosToMedoid.push_back(c);
     if (c < p.outlierCosMin) continue;
     r.kept.push_back(i);
-    for (size_t k = 0; k < sum.size(); ++k) sum[k] += feats[i][k];
   }
-  if (static_cast<int>(r.kept.size()) < p.minValid) {
-    r.reason = "too_few_valid_samples";
-    return r;
-  }
-  r.tmpl = l2normalize(std::move(sum));
-  r.ok = true;
+  r.ok = static_cast<int>(r.kept.size()) >= p.minValid;
   return r;
 }
 
@@ -67,6 +57,9 @@ std::vector<Vec> keptSamples(const std::vector<Vec>& feats, const TemplateResult
   return out;
 }
 
+namespace {
+
+// "user_<1-9 digits>" -> n. False for any other id; never throws.
 bool parseUserSeq(const std::string& id, uint32_t& n) {
   constexpr std::string_view kPrefix = "user_";
   if (id.size() <= kPrefix.size() || id.size() > kPrefix.size() + 9 || id.compare(0, kPrefix.size(), kPrefix) != 0)
@@ -87,7 +80,6 @@ bool parseUserSeq(const std::string& id, uint32_t& n) {
 //   users(id)                   in enrollment order (rowid)
 //   samples(user_id, idx, embedding)   dim float32 (little-endian), idx = 0..n-1
 // Each load / save opens its own connection, so a Gallery holds no handle.
-namespace {
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559, "embeddings are stored as IEEE float32");
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
 #error "embeddings are stored in host order, which must be little-endian"
@@ -96,6 +88,7 @@ static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559, "embe
 constexpr uint32_t kMaxSamples = 1024;     // per entry; larger counts mean a corrupt database
 constexpr size_t kMaxIdBytes = 1u << 20;   // longer ids mean a corrupt database
 constexpr int kSchemaVersion = 1;
+constexpr int kBusyTimeoutMs = 5000;       // how long load / save wait for a lock held by another process
 constexpr char kSqliteMagic[16] = {'S', 'Q', 'L', 'i', 't', 'e', ' ', 'f', 'o', 'r', 'm', 'a', 't', ' ', '3', '\0'};
 
 using Kind = GalleryError::Kind;
@@ -151,12 +144,12 @@ FileState probe(const std::string& path) {
   return f && std::equal(head, head + sizeof head, kSqliteMagic) ? FileState::Database : FileState::Other;
 }
 
-Db openDb(const std::string& path, int flags, int busyMs) {
+Db openDb(const std::string& path, int flags) {
   sqlite3* raw = nullptr;
   const int rc = sqlite3_open_v2(path.c_str(), &raw, flags | SQLITE_OPEN_NOMUTEX, nullptr);
   Db db(raw);
   if (rc != SQLITE_OK) fail(raw, rc, "cannot open", path);
-  sqlite3_busy_timeout(raw, busyMs);
+  sqlite3_busy_timeout(raw, kBusyTimeoutMs);
   return db;
 }
 
@@ -202,7 +195,7 @@ void Gallery::load(const std::string& path) {
   }
   // READWRITE lets SQLite roll back a journal that a crashed save left behind;
   // it still opens read-only a file the process may not write.
-  const Db db = openDb(path, SQLITE_OPEN_READWRITE, busyTimeoutMs_);
+  const Db db = openDb(path, SQLITE_OPEN_READWRITE);
   sqlite3* d = db.get();
   exec(d, "BEGIN", path);  // one snapshot for all the queries below
 
@@ -287,7 +280,7 @@ void Gallery::load(const std::string& path) {
 void Gallery::save(const std::string& path) const {
   if (probe(path) == FileState::Other)
     throw GalleryError(Kind::Corrupt, "gallery: refusing to overwrite a file that is not a palm gallery: " + path);
-  const Db db = openDb(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, busyTimeoutMs_);
+  const Db db = openDb(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
   sqlite3* d = db.get();
   exec(d, "PRAGMA journal_mode = DELETE", path);
   exec(d, "PRAGMA synchronous = FULL", path);
@@ -370,36 +363,17 @@ bool Gallery::remove(const std::string& id) {
   return found;
 }
 
-float bestScore(const Vec& probe, const GalleryEntry& e) {
-  float best = -2.f;  // below any cosine
-  for (const Vec& v : e.samples) best = std::max(best, dot(probe, v));
-  return best;
-}
-
-namespace {
-void sortTop(std::vector<Match>& m, int topK) {
-  std::sort(m.begin(), m.end(), [](const Match& a, const Match& b) { return a.score > b.score; });
-  if (static_cast<int>(m.size()) > topK) m.resize(std::max(0, topK));
-}
-}  // namespace
-
-std::vector<Match> Gallery::search(const Vec& probe, int topK, const std::string& excludeId) const {
-  std::vector<Match> m;
-  for (const auto& e : entries_)
-    if (e.id != excludeId) m.push_back({e.id, bestScore(probe, e)});
-  sortTop(m, topK);
-  return m;
-}
-
 std::vector<Match> Gallery::search(const std::vector<Vec>& probes, int topK, const std::string& excludeId) const {
   std::vector<Match> m;
   for (const auto& e : entries_) {
     if (e.id == excludeId) continue;
-    float best = -2.f;
-    for (const Vec& p : probes) best = std::max(best, bestScore(p, e));
+    float best = -2.f;  // below any cosine
+    for (const Vec& p : probes)
+      for (const Vec& v : e.samples) best = std::max(best, dot(p, v));
     m.push_back({e.id, best});
   }
-  sortTop(m, topK);
+  std::sort(m.begin(), m.end(), [](const Match& a, const Match& b) { return a.score > b.score; });
+  if (static_cast<int>(m.size()) > topK) m.resize(std::max(0, topK));
   return m;
 }
 

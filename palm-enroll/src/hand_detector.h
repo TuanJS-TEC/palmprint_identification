@@ -23,14 +23,6 @@ struct HandLandmarks {
   // image axes: x right, y down, z away from the camera (MediaPipe: smaller z
   // is closer). Only their directions are used (palm plane, capture_gate.h).
   std::array<cv::Point3f, 21> world{};
-
-  // How the hand looks in the given image: on a non-mirrored camera frame this
-  // is the physical hand (palm_handcheck on the capture log). The capture
-  // script mirrored its frames first, so log_label.csv has the opposite label.
-  const char* label() const { return handedness > 0.5f ? "Right" : "Left"; }
-  // z of cross(index_mcp - wrist, pinky_mcp - wrist) in image coordinates:
-  // < 0 for a right palm or a left back of hand facing a non-mirrored camera.
-  float palmSide() const;
 };
 
 class HandDetector {

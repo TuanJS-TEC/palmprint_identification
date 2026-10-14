@@ -34,13 +34,13 @@ void require(const std::vector<std::string>& have, const char* const* want, size
 
 struct PalmModel::Impl {
   Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "palm"};
-  Ort::SessionOptions so;
   std::unique_ptr<Ort::Session> session;
   Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
   int featureDim = 0;
 
   explicit Impl(const ModelOptions& opt) {
     if (!std::filesystem::exists(opt.onnxPath)) throw std::runtime_error("model not found: " + opt.onnxPath);
+    Ort::SessionOptions so;  // the session keeps its own copy
     so.SetIntraOpNumThreads(opt.threads);
     so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     so.AddConfigEntry("session.intra_op.allow_spinning", "0");  // several sessions share the CPU
@@ -55,25 +55,18 @@ struct PalmModel::Impl {
   }
 };
 
-PalmModel::PalmModel(const ModelOptions& opt)
-    : p_(std::make_unique<Impl>(opt)), input224Original_(opt.input224Original) {}
+PalmModel::PalmModel(const ModelOptions& opt) : p_(std::make_unique<Impl>(opt)) {}
 PalmModel::~PalmModel() = default;
 
 int PalmModel::featureDim() const { return p_->featureDim; }
 
-ModelInputs PalmModel::preprocess(const cv::Mat& bgr, bool flip) const {
+Embedding PalmModel::run(const cv::Mat& bgr, bool flip) {
   const cv::Mat rgb = toRgbFloat(bgr, flip);
-  ModelInputs in;
-  in.x56 = vlResize(rgb, {56, 56});
-  in.x224 = input224Original_ ? rgb : vlResize(rgb, {224, 224});
-  return in;
-}
-
-Embedding PalmModel::infer(const ModelInputs& in) {
-  std::vector<float> a(3 * in.x56.total()), b(3 * in.x224.total());
-  packChw(in.x56, a.data());
-  packChw(in.x224, b.data());
-  const std::array<int64_t, 4> sa{1, 3, in.x56.rows, in.x56.cols}, sb{1, 3, in.x224.rows, in.x224.cols};
+  const cv::Mat x56 = vlResize(rgb, {56, 56}), x224 = vlResize(rgb, {224, 224});
+  std::vector<float> a(3 * x56.total()), b(3 * x224.total());
+  packChw(x56, a.data());
+  packChw(x224, b.data());
+  const std::array<int64_t, 4> sa{1, 3, x56.rows, x56.cols}, sb{1, 3, x224.rows, x224.cols};
   std::array<Ort::Value, 2> x{
       Ort::Value::CreateTensor<float>(p_->mem, a.data(), a.size(), sa.data(), sa.size()),
       Ort::Value::CreateTensor<float>(p_->mem, b.data(), b.size(), sb.data(), sb.size())};

@@ -77,14 +77,8 @@ Crop cropAndPad(const cv::Mat& image, cv::Point2d b0, cv::Point2d b1, bool forRo
 
 }  // namespace
 
-float HandLandmarks::palmSide() const {
-  const cv::Point2f a = pts[5] - pts[0], b = pts[17] - pts[0];
-  return a.x * b.y - a.y * b.x;
-}
-
 struct HandDetector::Impl {
   Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "hand"};
-  Ort::SessionOptions so;
   std::unique_ptr<Ort::Session> palm, hand;
   Ort::MemoryInfo mem = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
   std::vector<cv::Point2d> anchors = makeAnchors();
@@ -92,6 +86,7 @@ struct HandDetector::Impl {
   Impl(const std::string& palmOnnx, const std::string& handOnnx, int threads) {
     for (const auto& f : {palmOnnx, handOnnx})
       if (!std::filesystem::exists(f)) throw std::runtime_error("model not found: " + f);
+    Ort::SessionOptions so;  // each session keeps its own copy
     so.SetIntraOpNumThreads(threads);
     so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     so.AddConfigEntry("session.intra_op.allow_spinning", "0");  // several sessions share the CPU

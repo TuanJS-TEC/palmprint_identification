@@ -19,15 +19,12 @@ struct TemplateParams {
 };
 
 struct TemplateResult {
-  bool ok = false;
-  std::string reason;            // empty when ok
-  Vec tmpl;                      // normalised mean of the kept samples (for the log)
-  std::vector<int> kept;         // indices into the input: the samples to store
-  int medoid = -1;               // index of the sample most similar to the others
-  std::vector<float> cosToMedoid;
+  bool ok = false;                 // at least minValid samples kept
+  std::vector<int> kept;           // indices into the input: the samples to store
+  std::vector<float> cosToMedoid;  // per input sample; medoid = the sample most similar to the others
 };
 
-// feats: L2-normalised embeddings of one palm.
+// feats: L2-normalised embeddings of one palm. Drops the outliers.
 TemplateResult buildTemplate(const std::vector<Vec>& feats, const TemplateParams& p);
 // The samples of feats that buildTemplate kept (what a gallery entry stores).
 std::vector<Vec> keptSamples(const std::vector<Vec>& feats, const TemplateResult& t);
@@ -42,16 +39,10 @@ struct GalleryEntry {
   std::vector<Vec> samples;  // L2-normalised
 };
 
-// Highest cosine between the probe and any sample of the entry.
-float bestScore(const Vec& probe, const GalleryEntry& e);
-
 struct Match {
   std::string id;
   float score = 0.f;
 };
-
-// "user_<1-9 digits>" -> n. False for any other id; never throws.
-bool parseUserSeq(const std::string& id, uint32_t& n);
 
 // What went wrong with the gallery file; callers decide what is safe to do
 // next: only Corrupt and ModelMismatch say the file itself is of no use.
@@ -83,18 +74,15 @@ class Gallery {
   // missing): a reader sees the old or the new gallery, a failure keeps the
   // old one. Refuses to overwrite a file that is not a gallery database.
   void save(const std::string& path) const;
-  // How long load / save wait for a lock held by another process.
-  void setBusyTimeoutMs(int ms) { busyTimeoutMs_ = ms; }
 
   // Throws if the entry has no sample or a sample of the wrong dimension.
   void upsert(GalleryEntry e);
   bool remove(const std::string& id);
   const std::vector<GalleryEntry>& entries() const { return entries_; }
   bool contains(const std::string& id) const;
-  // Score of an entry = bestScore(probe, entry), highest first.
-  std::vector<Match> search(const Vec& probe, int topK, const std::string& excludeId = {}) const;
-  // Several probes (the samples of a new enrollment): score of an entry = the
-  // highest cosine over every probe / sample pair (duplicate check).
+  // Score of an entry = the highest cosine over every probe / sample pair,
+  // highest first. One probe: identification; the samples of a new
+  // enrollment: duplicate check.
   std::vector<Match> search(const std::vector<Vec>& probes, int topK, const std::string& excludeId = {}) const;
 
   // Next automatic id, "user_0001", "user_0002", ...: one above every
@@ -107,7 +95,6 @@ class Gallery {
   int dim_;
   std::vector<GalleryEntry> entries_;
   uint32_t nextSeq_ = 1;
-  int busyTimeoutMs_ = 5000;
 };
 
 }  // namespace palm

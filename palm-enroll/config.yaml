@@ -9,7 +9,6 @@ model:
   onnx: "../models/EE_PRnet-epoch-60.onnx"   # from convert_mat_to_onnx.py
   version: "ee_prnet_e60"                    # stored in the gallery; change => re-enroll
   threads: 4                                 # physical cores of the target (i5-10210U: 4)
-  input224_mode: "resize224"                 # resize224 (as in training) | original
 hand:
   # Only the physical right hand is enrolled and identified (one per person).
   # right_label: handedness label of the physical right hand in LABELS.csv
@@ -49,7 +48,8 @@ capture:
   min_crop_frac: 0.33     # hand crop side / frame height (log: >= 0.36)
   max_motion: 0.02        # landmark motion per frame / crop side
   blur_min: 100           # Laplacian variance; hand_crop p1 116, live-path p1 216
-  # enrollment capture gate (capture_gate.h): checked in this order, after checkHand
+  # capture gate (capture_gate.h), checked in this order after the hand itself
+  # (right hand, palm towards the camera); the crop limits above are part of it
   edge_margin: 0.02       # every landmark keeps this fraction of the frame from the edge
   min_palm_frac: 0.15     # wrist -> middle knuckle / frame height: below = move closer (estimate)
   max_palm_frac: 0.30     # above = move back (estimate)

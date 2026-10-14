@@ -49,10 +49,11 @@ QString detectText(const FrameResult& r) {
   if (h.palmScore <= 0.f) return QStringLiteral("palm -");
   QString s = QStringLiteral("palm %1 pres %2").arg(f2(h.palmScore), f2(h.presence));
   if (!h.found) return s;
-  s += QStringLiteral(" right %1 box %2px").arg(f2(h.handedness)).arg(r.check.box.width);
-  if (r.check.state == palm::HandState::Moving)  // 1e9: no hand in the previous frame
-    s += QStringLiteral(" motion %1").arg(r.check.motion < 1e6f ? f3(r.check.motion) : QStringLiteral("-"));
-  if (r.check.sharp > 0) s += QStringLiteral(" sharp %1").arg(r.check.sharp, 0, 'f', 0);
+  const palm::GateReport& g = r.gate;
+  s += QStringLiteral(" right %1 box %2px").arg(f2(h.handedness)).arg(g.box.width);
+  if (g.motion > 0)  // 1e9: no hand in the previous frame
+    s += QStringLiteral(" motion %1").arg(g.motion < 1e6f ? f3(g.motion) : QStringLiteral("-"));
+  if (g.sharp > 0) s += QStringLiteral(" sharp %1").arg(g.sharp, 0, 'f', 0);
   return s;
 }
 
@@ -87,7 +88,7 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
                        .arg(f2(cfg_.dupCosMax))
                        .arg(cfg_.session.samples)
                        .arg(cfg_.tmpl.minValid)
-                       .arg(cfg_.capture.blurMin, 0, 'f', 0));
+                       .arg(cfg_.gate.blurMin, 0, 'f', 0));
   log_->add("APP", QStringLiteral("tư thế: nghiêng <= %1° (mẫu đầu <= %2°), các mẫu lệch nhau >= %3° | sáng %4..%5")
                        .arg(cfg_.gate.maxTiltDeg, 0, 'f', 0)
                        .arg(cfg_.gate.frontalMaxDeg, 0, 'f', 0)
@@ -132,8 +133,7 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
   }
 
   // ---- layout: video | panel
-  video_ = new VideoView(cfg_.camera.displayMirror);
-  video_->setPoseLimits(cfg_.gate);
+  video_ = new VideoView(cfg_.camera.displayMirror, cfg_.gate);
   auto* panel = new QWidget;
   panel->setFixedWidth(340);
   auto* pv = new QVBoxLayout(panel);
@@ -255,7 +255,7 @@ MainWindow::MainWindow(const palm::Config& cfg, const std::string& source, bool 
   connect(logBtn_, &QPushButton::toggled, log_, &QWidget::setVisible);
 
   refreshList();
-  idEdit_->setText(nextFreeId());
+  idEdit_->setText(QString::fromStdString(gallery_.nextId()));
 
   // ---- worker thread
   worker_ = new CameraWorker(cfg_, source, mirrorSource);
@@ -296,8 +296,7 @@ void MainWindow::onWorkerFailed(const QString& text) {
 
 void MainWindow::setMode(Mode m) {
   mode_ = m;
-  worker_->setEmbedInterval(m == Mode::Enroll ? cfg_.session.gapMs : m == Mode::Identify ? 0 : -1);
-  worker_->setGated(m == Mode::Enroll);
+  worker_->setMode(m);
   const bool idle = m == Mode::Idle;
   enrollBtn_->setEnabled(idle);
   idEdit_->setEnabled(idle);
@@ -323,8 +322,7 @@ void MainWindow::startEnroll() {
     enrollMsg_->setText(QStringLiteral("Nhập ID trước khi đăng ký."));
     return;
   }
-  const auto& es = gallery_.entries();
-  const bool exists = std::any_of(es.begin(), es.end(), [&](const palm::GalleryEntry& e) { return e.id == id.toStdString(); });
+  const bool exists = gallery_.contains(id.toStdString());
   if (exists && QMessageBox::question(this, QStringLiteral("ID đã tồn tại"),
                                       QStringLiteral("'%1' đã đăng ký tay phải. Mỗi người chỉ có một mẫu.\n"
                                                      "Đăng ký lại sẽ thay mẫu cũ. Tiếp tục?").arg(id)) != QMessageBox::Yes)
@@ -389,7 +387,7 @@ void MainWindow::logFrame(const FrameResult& r) {
   if (!perfClock_.isValid()) perfClock_.start();
   ++perfFrames_;
   perfDetectMs_ += r.msDetect;
-  if (r.embedded) ++perfEmbeds_, perfEmbedMs_ += r.msEmbed;
+  if (r.embedded()) ++perfEmbeds_, perfEmbedMs_ += r.msEmbed;
   if (perfClock_.elapsed() >= 30000) {
     log_->add("PERF", QStringLiteral("%1 fps | phát hiện tay %2 ms/khung | embedding %3 lần, %4 ms/lần")
                           .arg(r.fps, 0, 'f', 1)
@@ -408,10 +406,10 @@ void MainWindow::onFrame(const FrameResult& r) {
   status_->setText(QStringLiteral("%1 fps | tay %2 ms%3 | %4 người đã đăng ký")
                        .arg(r.fps, 0, 'f', 1)
                        .arg(r.msDetect, 0, 'f', 0)
-                       .arg(r.embedded ? QStringLiteral(" | embedding %1 ms").arg(r.msEmbed, 0, 'f', 0) : QString())
+                       .arg(r.embedded() ? QStringLiteral(" | embedding %1 ms").arg(r.msEmbed, 0, 'f', 0) : QString())
                        .arg(gallery_.entries().size()));
-  if (!r.lightDebug.isNull()) {
-    debugView_->setPixmap(pix(r.lightDebug, 112));
+  if (const cv::Mat& d = r.gate.lightDebug; !d.empty()) {
+    debugView_->setPixmap(pix(QImage(d.data, d.cols, d.rows, static_cast<int>(d.step), QImage::Format_BGR888), 112));
     debugInfo_->setText(QStringLiteral("sáng TB %1 (%2..%3)\ncháy %4% (tối đa %5%)")
                             .arg(r.gate.mean, 0, 'f', 0)
                             .arg(cfg_.gate.minMean, 0, 'f', 0)
@@ -422,12 +420,12 @@ void MainWindow::onFrame(const FrameResult& r) {
     debugView_->clear();
     debugInfo_->clear();
   }
-  if (r.embedded) {
+  if (r.embedded()) {
     cropView_->setPixmap(pix(r.crop, 112));
     roiView_->setPixmap(pix(r.roi, 112));
   }
   if (mode_ == Mode::Enroll) {
-    if (r.embedded) addEnrollSample(r);
+    if (r.embedded()) addEnrollSample(r);
     if (mode_ == Mode::Enroll) {
       if (enrollClock_.elapsed() > cfg_.session.timeoutS * 1000LL) {
         enrollMsg_->setText(QStringLiteral("Hết thời gian (%1 s). Thử lại.").arg(cfg_.session.timeoutS));
@@ -444,7 +442,7 @@ void MainWindow::onFrame(const FrameResult& r) {
       }
     }
   } else if (mode_ == Mode::Identify) {
-    if (r.embedded) {
+    if (r.embedded()) {
       identify(r);
     } else if (lastEmbedClock_.elapsed() > 1500) {
       streak_ = 0;
@@ -461,7 +459,7 @@ void MainWindow::addEnrollSample(const FrameResult& r) {
   QString line = QStringLiteral("mẫu %1/%2").arg(k + 1).arg(cfg_.session.samples);
   if (k >= 2) line += QStringLiteral(" | cos với mẫu 1 %1").arg(f3(palm::dot(r.feat, enrollFeats_.front())));
   if (k >= 1) line += QStringLiteral(" | cos với mẫu trước %1").arg(f3(palm::dot(r.feat, enrollFeats_.back())));
-  const auto other = gallery_.search(r.feat, 1, enrollId_.toStdString());
+  const auto other = gallery_.search({r.feat}, 1, enrollId_.toStdString());
   if (!other.empty())
     line += QStringLiteral(" | gần nhất người khác %1 %2").arg(QString::fromStdString(other[0].id), f3(other[0].score));
   line += QStringLiteral(" | %1 | %2 | embed %3 ms").arg(gateText(r), detectText(r)).arg(r.msEmbed, 0, 'f', 0);
@@ -533,7 +531,7 @@ void MainWindow::finishEnroll() {
                           .arg(enrollId_).arg(t.kept.size()).arg(enrollFeats_.size()));
   enrollMsg_->setStyleSheet("color:#2ecc71;");
   refreshList();
-  idEdit_->setText(nextFreeId());
+  idEdit_->setText(QString::fromStdString(gallery_.nextId()));
 }
 
 void MainWindow::identify(const FrameResult& r) {
@@ -542,7 +540,7 @@ void MainWindow::identify(const FrameResult& r) {
     result_->setText(resultHtml(QStringLiteral("Chưa có ai đăng ký"), {}, kAmber));
     return;
   }
-  const auto m = gallery_.search(r.feat, 2);
+  const auto m = gallery_.search({r.feat}, 2);
   const QString id = QString::fromStdString(m[0].id);
   const bool accept = m[0].score >= cfg_.acceptCosMin;
   if (accept && id == lastId_) {
@@ -588,8 +586,6 @@ void MainWindow::refreshList() {
   }
 }
 
-QString MainWindow::nextFreeId() const { return QString::fromStdString(gallery_.nextId()); }
-
 void MainWindow::deleteSelected() {
   const QListWidgetItem* item = list_->currentItem();
   if (!item) return;
@@ -609,5 +605,5 @@ void MainWindow::deleteSelected() {
     QMessageBox::warning(this, QStringLiteral("Lỗi"), QString::fromStdString(e.what()));
   }
   refreshList();
-  idEdit_->setText(nextFreeId());
+  idEdit_->setText(QString::fromStdString(gallery_.nextId()));
 }

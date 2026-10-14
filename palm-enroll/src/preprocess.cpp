@@ -48,8 +48,7 @@ struct Filter1D {
   }
 };
 
-}  // namespace
-
+// Largest centred crop of `in` with the aspect ratio of `out` (no stretching).
 cv::Rect vlCropGeometry(cv::Size in, cv::Size out) {
   const double scale = std::min(static_cast<double>(in.width) / out.width,
                                 static_cast<double>(in.height) / out.height);
@@ -57,6 +56,8 @@ cv::Rect vlCropGeometry(cv::Size in, cv::Size out) {
   const int h = static_cast<int>(std::min(std::round(out.height * scale), static_cast<double>(in.height)));
   return {(in.width - w) / 2, (in.height - h) / 2, w, h};
 }
+
+}  // namespace
 
 cv::Mat vlResize(const cv::Mat& src, cv::Size out) {
   if (src.empty() || src.depth() != CV_32F) throw std::invalid_argument("vlResize: expects a CV_32F image");

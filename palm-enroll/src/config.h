@@ -3,7 +3,6 @@
 
 #include "capture_gate.h"
 #include "gallery.h"
-#include "hand_crop.h"
 #include "palm_model.h"
 
 namespace palm {
@@ -33,16 +32,13 @@ struct Config {
     int device = 0, width = 1920, height = 1080;
     bool displayMirror = true;  // show the preview like a mirror
   } camera;
-  CaptureLimits capture;
-  GateLimits gate;            // enrollment capture gate (capture_gate.h)
+  GateLimits gate;            // capture gate (capture_gate.h), config section "capture"
   struct {
     int samples = 5;            // embeddings per enrollment
     int gapMs = 700;            // between two enrollment captures
     int timeoutS = 60;
     int identifyConfirm = 3;    // consecutive accepted frames to confirm an id
   } session;
-
-  bool isRightHand(const std::string& mediapipeLabel) const { return mediapipeLabel == rightLabel; }
 };
 
 // Reads an OpenCV FileStorage YAML file; relative paths are resolved against

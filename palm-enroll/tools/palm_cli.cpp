@@ -42,7 +42,7 @@ void requireRightHand(const Config& cfg, const Args& a) {
   if (!a.has("label")) throw std::runtime_error("--label Left|Right (MediaPipe handedness) is required");
   const std::string label = a.get("label");
   if (label != "Left" && label != "Right") throw std::runtime_error("--label must be Left or Right");
-  if (!cfg.isRightHand(label))
+  if (label != cfg.rightLabel)
     throw std::runtime_error("only the right hand can be used: MediaPipe label '" + label +
                              "' is the left hand in this setup (hand.right_label: " + cfg.rightLabel + ")");
 }
@@ -100,7 +100,7 @@ int cmdEnroll(PalmModel& model, const Config& cfg, const Args& a) {
   requireRightHand(cfg, a);
   Gallery g(cfg.modelVersion, model.featureDim());
   g.load(cfg.galleryPath);
-  const bool exists = std::any_of(g.entries().begin(), g.entries().end(), [&](const GalleryEntry& e) { return e.id == id; });
+  const bool exists = g.contains(id);
   if (exists && !a.has("force")) {
     std::printf("enroll %s: REFUSED, already enrolled (one right hand per person); --force to replace\n", id.c_str());
     return 3;
@@ -113,7 +113,7 @@ int cmdEnroll(PalmModel& model, const Config& cfg, const Args& a) {
     std::printf("  %-60s cos(medoid)=%.3f %s\n", samples[i].path.c_str(), t.cosToMedoid[i],
                 std::find(t.kept.begin(), t.kept.end(), static_cast<int>(i)) != t.kept.end() ? "kept" : "OUTLIER");
   if (!t.ok) {
-    std::printf("enroll %s: FAILED (%s, %zu kept, need %d)\n", id.c_str(), t.reason.c_str(), t.kept.size(),
+    std::printf("enroll %s: FAILED (%zu/%zu samples kept, need %d)\n", id.c_str(), t.kept.size(), samples.size(),
                 cfg.tmpl.minValid);
     return 2;
   }
@@ -138,7 +138,7 @@ int cmdIdentify(PalmModel& model, const Config& cfg, const Args& a) {
   if (g.entries().empty()) throw std::runtime_error("gallery is empty: " + cfg.galleryPath);
   const int top = std::stoi(a.get("top", "3"));
   for (const auto& s : embedAll(model, cfg, a)) {
-    const auto m = g.search(s.feat, top);
+    const auto m = g.search({s.feat}, top);
     const bool accept = !m.empty() && m[0].score >= cfg.acceptCosMin;
     std::printf("%s  %.1f ms  -> %s", s.path.c_str(), s.ms, accept ? m[0].id.c_str() : "UNKNOWN");
     std::printf("  [");

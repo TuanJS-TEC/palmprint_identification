@@ -30,10 +30,6 @@ Config loadConfig(const std::string& path) {
   read(m, "onnx", c.model.onnxPath);
   read(m, "threads", c.model.threads);
   read(m, "version", c.modelVersion);
-  std::string mode = "resize224";
-  read(m, "input224_mode", mode);
-  if (mode != "resize224" && mode != "original") throw std::runtime_error("model.input224_mode: resize224 | original");
-  c.model.input224Original = mode == "original";
   c.model.onnxPath = resolve(base, c.model.onnxPath);
 
   read(fs["hand"], "right_label", c.rightLabel);
@@ -61,10 +57,10 @@ Config loadConfig(const std::string& path) {
   read(cam, "display_mirror", displayMirror);
   c.camera.displayMirror = displayMirror != 0;
   const cv::FileNode cap = fs["capture"];
-  read(cap, "crop_scale", c.capture.cropScale);
-  read(cap, "min_crop_frac", c.capture.minCropFrac);
-  read(cap, "max_motion", c.capture.maxMotion);
-  read(cap, "blur_min", c.capture.blurMin);
+  read(cap, "crop_scale", c.gate.cropScale);
+  read(cap, "min_crop_frac", c.gate.minCropFrac);
+  read(cap, "max_motion", c.gate.maxMotion);
+  read(cap, "blur_min", c.gate.blurMin);
   read(cap, "edge_margin", c.gate.edgeMargin);
   read(cap, "min_palm_frac", c.gate.minPalmFrac);
   read(cap, "max_palm_frac", c.gate.maxPalmFrac);

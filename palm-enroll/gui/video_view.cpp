@@ -93,7 +93,8 @@ void drawLabel(QPainter& p, const QRect& area, const QString& text, const QColor
 
 }  // namespace
 
-VideoView::VideoView(bool mirror, QWidget* parent) : QWidget(parent), mirror_(mirror) {
+VideoView::VideoView(bool mirror, const palm::GateLimits& lim, QWidget* parent)
+    : QWidget(parent), mirror_(mirror), lim_(lim) {
   setMinimumSize(320, 240);
   setAttribute(Qt::WA_OpaquePaintEvent);
 }
@@ -135,7 +136,8 @@ void VideoView::paintEvent(QPaintEvent*) {
   const bool good = r_.gated ? r_.gate.status == palm::GateStatus::Ready : r_.gate.framePasses();
   const QColor c = good ? QColor(46, 204, 113) : r_.hand.found ? gateColor(r_.gate.status) : QColor(200, 200, 200);
   if (r_.hand.found) {
-    const QRectF box(r_.check.box.x * s, r_.check.box.y * s, r_.check.box.width * s, r_.check.box.height * s);
+    const cv::Rect& b = r_.gate.box;
+    const QRectF box(b.x * s, b.y * s, b.width * s, b.height * s);
     p.setBrush(Qt::NoBrush);
     p.setPen(QPen(c, 3));
     p.drawRect(box);
@@ -157,11 +159,11 @@ void VideoView::paintEvent(QPaintEvent*) {
 
   QString message = QString::fromUtf8(palm::gateMessage(r_.gate.status));
   if (r_.gated) {
-    if (r_.embedded) p.fillRect(rect(), QColor(255, 255, 255, 150));  // a sample was taken: flash
+    if (r_.embedded()) p.fillRect(rect(), QColor(255, 255, 255, 150));  // a sample was taken: flash
     drawTarget(p, target, r_.gate.progress);
     drawTiltMap(p, target, r_, lim_, mirror_);
   } else if (good) {
-    message = QString::fromUtf8(palm::stateMessage(palm::HandState::Ok));
+    message = QStringLiteral("Tốt - giữ nguyên");
   }
   const QRect area = target.toRect().adjusted(10, 10, -10, -10);
   drawLabel(p, area, message, c.darker(130), 24, Qt::AlignTop);

@@ -1,7 +1,7 @@
 // palm_gui: right-hand palmprint enrollment and identification on a live camera.
 //
 // usage: palm_gui [config.yaml] [--source IMAGE|VIDEO [--mirrored]] [--fullscreen]
-//                 [--enroll ID | --identify] [--verbose] [--log FILE]
+//                 [--enroll ID | --identify] [--log FILE]
 //                 [--screenshot FILE --quit-after SEC]
 //   config.yaml   default: next to the executable
 //   --log         event log file, default palm_gui.log next to config.yaml;
@@ -9,7 +9,6 @@
 //   --source      replay an image or a video instead of the camera (testing);
 //                 --mirrored if it is a mirror image of the camera view
 //   --enroll ID   start enrolling ID right away; --identify: start identifying
-//   --verbose     timing summary on stderr every second
 //   --screenshot  save the window after --quit-after seconds and quit (smoke test)
 #include <iostream>
 
@@ -28,7 +27,7 @@ int main(int argc, char** argv) {
 
   QString cfgPath = QDir(QCoreApplication::applicationDirPath()).filePath("config.yaml");
   std::string source;
-  bool mirrored = false, fullscreen = false, identify = false, verbose = false;
+  bool mirrored = false, fullscreen = false, identify = false;
   QString shot, enrollId, logPath;
   bool logSet = false;
   int quitAfter = 0;
@@ -45,7 +44,6 @@ int main(int argc, char** argv) {
       else if (a == "--fullscreen") fullscreen = true;
       else if (a == "--enroll") enrollId = value();
       else if (a == "--identify") identify = true;
-      else if (a == "--verbose") verbose = true;
       else if (a == "--log") logPath = value(), logSet = true;
       else if (a == "--screenshot") shot = value();
       else if (a == "--quit-after") quitAfter = value().toInt();
@@ -67,7 +65,6 @@ int main(int argc, char** argv) {
 
   if (!logSet) logPath = QFileInfo(cfgPath).absoluteDir().filePath("palm_gui.log");
   MainWindow w(cfg, source, mirrored, logPath);
-  w.setVerbose(verbose);
   const bool embedded = QGuiApplication::platformName().startsWith("eglfs") ||
                         QGuiApplication::platformName().startsWith("linuxfb");
   if (fullscreen || embedded) {

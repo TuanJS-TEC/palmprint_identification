@@ -25,7 +25,6 @@ class MainWindow : public QMainWindow {
 
   void beginEnroll(const QString& id);  // as if typed and clicked
   void beginIdentify();
-  void setVerbose(bool v) { worker_->setVerbose(v); }
 
  protected:
   void keyPressEvent(QKeyEvent* e) override;
@@ -40,13 +39,12 @@ class MainWindow : public QMainWindow {
   void deleteSelected();
 
  private:
-  enum class Mode { Idle, Enroll, Identify };
+  using Mode = CameraWorker::Mode;
   void setMode(Mode m);
   void addEnrollSample(const FrameResult& r);
   void finishEnroll();
   void identify(const FrameResult& r);
   void refreshList();
-  QString nextFreeId() const;
   void logFrame(const FrameResult& r);  // hand state changes + periodic timing summary
 
   palm::Config cfg_;
