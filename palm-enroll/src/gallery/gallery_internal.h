@@ -10,8 +10,6 @@ namespace palm::detail {
 
 constexpr uint32_t kMaxSamples = 1024;  // per entry; larger counts mean a corrupt database
 
-// Automatic ids "user_0001", "user_0002", ...: the counter behind Gallery::nextId.
-// "user_<1-9 digits>" -> n. False for any other id; never throws.
 inline bool parseUserSeq(const std::string& id, uint32_t& n) {
   constexpr std::string_view kPrefix = "user_";
   if (id.size() <= kPrefix.size() || id.size() > kPrefix.size() + 9 || id.compare(0, kPrefix.size(), kPrefix) != 0)

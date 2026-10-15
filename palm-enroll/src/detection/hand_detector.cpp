@@ -20,11 +20,10 @@ const char* kHandOut[] = {"Identity", "Identity_1", "Identity_2", "Identity_3"};
 
 struct Palm {
   cv::Point2d p0, p1;               // box corners
-  std::array<cv::Point2d, 7> kp;    // wrist, 5 finger bases..., see mp_palmdet.py
+  std::array<cv::Point2d, 7> kp;
   double score = 0;
 };
 
-// SSD anchors of the MediaPipe palm detector (identical to the table in mp_palmdet.py)
 std::vector<cv::Point2d> makeAnchors() {
   std::vector<cv::Point2d> a;
   for (const auto& [stride, n] : {std::pair{8, 2}, std::pair{16, 6}}) {
@@ -45,7 +44,6 @@ double iou(const Palm& a, const Palm& b) {
   return w * h / (area(a) + area(b) - w * h);
 }
 
-// mp_handpose.py _cropAndPadFromPalm: shift, enlarge, crop (clipped) and pad to a square.
 struct Crop {
   cv::Mat img;
   cv::Point p0, p1;  // clipped integer box in the source image
@@ -89,12 +87,11 @@ struct HandDetector::Impl {
     Ort::SessionOptions so;  // each session keeps its own copy
     so.SetIntraOpNumThreads(threads);
     so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-    so.AddConfigEntry("session.intra_op.allow_spinning", "0");  // several sessions share the CPU
+    so.AddConfigEntry("session.intra_op.allow_spinning", "0");
     palm = std::make_unique<Ort::Session>(env, std::filesystem::path(palmOnnx).c_str(), so);
     hand = std::make_unique<Ort::Session>(env, std::filesystem::path(handOnnx).c_str(), so);
   }
 
-  // mp_palmdet.py: letterbox to 192x192, RGB / 255, decode boxes, NMS
   std::vector<Palm> detectPalms(const cv::Mat& bgr) {
     const int h = bgr.rows, w = bgr.cols;
     const double ratio = std::min(double(kPalmIn) / h, double(kPalmIn) / w);
@@ -139,7 +136,6 @@ struct HandDetector::Impl {
     return keep;
   }
 
-  // mp_handpose.py: rotate the palm upright, crop, 224x224, decode landmarks
   HandLandmarks landmarks(const cv::Mat& bgr, const Palm& p) {
     HandLandmarks r;
     r.palmScore = static_cast<float>(p.score);

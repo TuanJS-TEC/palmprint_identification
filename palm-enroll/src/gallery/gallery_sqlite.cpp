@@ -19,12 +19,6 @@ namespace {
 using detail::bumpSeq;
 using detail::kMaxSamples;
 
-// ---------------------------------------------------------------- storage
-// SQLite database, schema version 1 (PRAGMA user_version):
-//   meta(key, value)            model_version, dim, next_seq
-//   users(id)                   in enrollment order (rowid)
-//   samples(user_id, idx, embedding)   dim float32 (little-endian), idx = 0..n-1
-// Each load / save opens its own connection, so a Gallery holds no handle.
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559, "embeddings are stored as IEEE float32");
 #if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
 #error "embeddings are stored in host order, which must be little-endian"
@@ -65,8 +59,6 @@ using Stmt = std::unique_ptr<sqlite3_stmt, StmtCloser>;
 
 enum class FileState { Missing, Empty, Database, Other };
 
-// What is at path, judged by the SQLite header: SQLite itself takes a short
-// file of any content for an empty database, which would then be overwritten.
 FileState probe(const std::string& path) {
   std::error_code ec;
   const auto st = std::filesystem::status(path, ec);
@@ -132,8 +124,6 @@ void Gallery::load(const std::string& path) {
     nextSeq_ = 1;
     return;
   }
-  // READWRITE lets SQLite roll back a journal that a crashed save left behind;
-  // it still opens read-only a file the process may not write.
   const Db db = openDb(path, SQLITE_OPEN_READWRITE);
   sqlite3* d = db.get();
   exec(d, "BEGIN", path);  // one snapshot for all the queries below

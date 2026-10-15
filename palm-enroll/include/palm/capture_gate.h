@@ -1,17 +1,10 @@
 #pragma once
-// Capture gate of a live camera: decides when a hand is good enough to take an
-// embedding. Plain C++ and OpenCV only.
 #include <vector>
-
 #include <opencv2/core.hpp>
-
 #include "palm/hand_detector.h"
 
 namespace palm {
 
-// Order of the checks is the order of the user's guidance: the hand must be
-// visible and whole, then its size, light, pose, (enrollment) a tilt not
-// covered yet, and finally held still.
 enum class GateStatus {
   NoHand,
   LeftHand,
@@ -40,9 +33,6 @@ struct GateLimits {
   float minPalmFrac = 0.15f;  // wrist -> middle knuckle / frame height (estimate, calibrate with the log)
   float maxPalmFrac = 0.30f;
   float maxAngleDeg = 35.f;   // wrist -> middle knuckle vs image up
-  // Out-of-plane tilt of the palm, from the world landmarks (palmNormal). The
-  // EE-PRnet embedding of one palm changes with it: same-person cos median 0.98
-  // within 5 degrees, 0.75 at 15-20 degrees (output/original, 2026-10-09).
   float maxTiltDeg = 25.f;     // every frame, enrollment and identification
   float frontalMaxDeg = 12.f;  // enrollment: the first sample
   float minPoseSepDeg = 8.f;   // enrollment: each later sample vs every earlier one (noise ~2-5 degrees)
@@ -54,7 +44,6 @@ struct GateLimits {
   int stableMinFrames = 10;   // ... and over at least this many frames
 };
 
-// What the gate measured on the last frame; logged with each sample.
 struct GateReport {
   GateStatus status = GateStatus::NoHand;
   cv::Rect box;           // hand crop box in the frame (what EE-PRnet gets); empty without a hand
@@ -77,18 +66,11 @@ class CaptureGate {
  public:
   explicit CaptureGate(const GateLimits& lim = {}) : lim_(lim) {}
 
-  // frame: non-mirrored camera frame (what the detector saw); h: its
-  // detection; nowMs: monotonic clock in milliseconds. Call on every frame:
-  // the motion check compares with the previous call.
   GateReport update(const cv::Mat& frame, const HandLandmarks& h, double nowMs);
 
   // Starts a new stability window with the next frame (after each capture).
   void restart() { okSince_ = -1; okFrames_ = 0; }
 
-  // Enrollment pose coverage. While collecting, the first sample must face the
-  // camera (frontalMaxDeg) and every later one must differ from all samples
-  // taken so far by minPoseSepDeg, so the stored samples cover the tilts a
-  // probe can have. Switching it on or off forgets the samples taken.
   void setCollecting(bool on) {
     collecting_ = on;
     taken_.clear();

@@ -40,7 +40,7 @@ struct PalmModel::Impl {
 
   explicit Impl(const ModelOptions& opt) {
     if (!std::filesystem::exists(opt.onnxPath)) throw std::runtime_error("model not found: " + opt.onnxPath);
-    Ort::SessionOptions so;  // the session keeps its own copy
+    Ort::SessionOptions so;
     so.SetIntraOpNumThreads(opt.threads);
     so.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
     so.AddConfigEntry("session.intra_op.allow_spinning", "0");  // several sessions share the CPU

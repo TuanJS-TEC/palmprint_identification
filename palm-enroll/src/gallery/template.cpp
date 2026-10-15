@@ -8,7 +8,7 @@ TemplateResult buildTemplate(const std::vector<Vec>& feats, const TemplateParams
   TemplateResult r;
   const int n = static_cast<int>(feats.size());
   if (n == 0) return r;
-  // medoid: the sample with the highest mean cosine to the others
+  // medoid
   std::vector<float> meanCos(n, 0.f);
   for (int i = 0; i < n; ++i)
     for (int j = 0; j < n; ++j)

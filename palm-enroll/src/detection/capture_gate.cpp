@@ -10,7 +10,6 @@
 namespace palm {
 namespace {
 
-// wrist, thumb base, index / middle / ring / pinky knuckles
 const int kPalmPts[] = {0, 1, 5, 9, 13, 17};
 const int kSample = 64;  // fixed sample grid for the light check: O(1) in the camera resolution
 
@@ -28,7 +27,6 @@ cv::Rect handCropBox(const HandLandmarks& h, float scale) {
           static_cast<int>(std::lround(side)), static_cast<int>(std::lround(side))};
 }
 
-// Variance of the Laplacian of the crop (gray, resized to 224x224 INTER_AREA).
 float sharpness(const cv::Mat& bgrCrop) {
   cv::Mat g, lap;
   cv::cvtColor(bgrCrop, g, cv::COLOR_BGR2GRAY);
@@ -39,7 +37,6 @@ float sharpness(const cv::Mat& bgrCrop) {
   return static_cast<float>(sd[0] * sd[0]);
 }
 
-// Mean landmark displacement between two detections, relative to `side`.
 float landmarkMotion(const HandLandmarks& a, const HandLandmarks& b, float side) {
   if (!a.found || !b.found || side <= 0) return 1e9f;
   float s = 0;
@@ -47,14 +44,11 @@ float landmarkMotion(const HandLandmarks& a, const HandLandmarks& b, float side)
   return s / 21 / side;
 }
 
-// z of cross(index_mcp - wrist, pinky_mcp - wrist) in image coordinates:
-// < 0 for a right palm or a left back of hand facing a non-mirrored camera.
 float palmSide(const HandLandmarks& h) {
   const cv::Point2f a = h.pts[5] - h.pts[0], b = h.pts[17] - h.pts[0];
   return a.x * b.y - a.y * b.x;
 }
 
-// Every landmark and the palm box keep `margin` (fraction of the frame) from the edge.
 bool insideFrame(const HandLandmarks& h, cv::Size size, float margin) {
   const float mx = margin * size.width;
   const float my = margin * size.height;
@@ -66,7 +60,6 @@ bool insideFrame(const HandLandmarks& h, cv::Size size, float margin) {
   return in(h.palmBox.x, h.palmBox.y) && in(h.palmBox.x + h.palmBox.width, h.palmBox.y + h.palmBox.height);
 }
 
-// Angle of wrist -> middle knuckle from image up, degrees, 0..180.
 float rotationDeg(const HandLandmarks& h) {
   const cv::Point2f v = h.pts[9] - h.pts[0];
   return static_cast<float>(std::abs(std::atan2(v.x, -v.y)) * 180.0 / CV_PI);
@@ -74,9 +67,6 @@ float rotationDeg(const HandLandmarks& h) {
 
 float deg(double rad) { return static_cast<float>(rad * 180.0 / CV_PI); }
 
-// Mean length of the four fingers (knuckle -> tip) over the palm length. Curled
-// fingers fold towards the palm and get short. Tip-to-tip spread does not work:
-// curled fingers still span about one knuckle width.
 float fingerOpen(const HandLandmarks& h, float palmLen) {
   float sum = 0.f;
   for (int f = 0; f < 4; ++f) {
@@ -95,7 +85,6 @@ void palmLight(const cv::Mat& frame, const HandLandmarks& h, GateReport& r) {
   cv::resize(frame(box), small, {kSample, kSample}, 0, 0, cv::INTER_NEAREST);
   cv::cvtColor(small, gray, cv::COLOR_BGR2GRAY);
 
-  // fillPoly, not fillConvexPoly: the landmark polygon can be concave with a few px of error
   const float sx = static_cast<float>(kSample) / box.width;
   const float sy = static_cast<float>(kSample) / box.height;
   std::vector<cv::Point> pp;
@@ -115,7 +104,6 @@ void palmLight(const cv::Mat& frame, const HandLandmarks& h, GateReport& r) {
 }
 
 cv::Vec3f palmNormal(const HandLandmarks& h) {
-  // palm points only: the thumb and the fingers move on their own
   const int k[] = {0, 5, 9, 13, 17};
   cv::Point3f c(0, 0, 0);
   for (int i : k) c += h.world[i];
@@ -129,14 +117,12 @@ cv::Vec3f palmNormal(const HandLandmarks& h) {
   cv::Matx<float, 5, 3> u;
   cv::Matx<float, 3, 3> vt;
   cv::SVD::compute(P, w, u, vt);
-  // a plane needs two clear directions: the palm is ~0.08 m across
   if (!(w(1) > 1e-3f * std::max(1e-6f, w(0))) || !(w(0) > 1e-6f)) return {};
   cv::Vec3f n(vt(2, 0), vt(2, 1), vt(2, 2));
   if (n[2] > 0) n = -n;
   return n;
 }
 
-// Angle between two palm normals, degrees (90 if either is zero).
 float normalAngleDeg(const cv::Vec3f& a, const cv::Vec3f& b) {
   const double na = cv::norm(a), nb = cv::norm(b);
   if (!(na > 0) || !(nb > 0)) return 90.f;
@@ -163,8 +149,6 @@ GateReport CaptureGate::update(const cv::Mat& frame, const HandLandmarks& h, dou
   if (!right && !palmFront) return fail(GateStatus::LeftHand);
   if (!right || !palmFront) return fail(GateStatus::BackOfHand);
 
-  // measurements for the log, also on failed frames. Motion only on a crop of
-  // usable size inside the frame, sharpness only on a still one.
   const bool cropSmall = r.box.width < lim_.minCropFrac * frame.rows;
   const bool cropOut = (r.box & cv::Rect(0, 0, frame.cols, frame.rows)) != r.box;
   bool moving = false;
