@@ -53,8 +53,7 @@ LOG
   Tham số: --log FILE để ghi chỗ khác, --log "" để chỉ hiện trên màn hình.
 
 THỬ KHÔNG CẦN CAMERA
-  ./run_gui.sh --source anh.jpg             ảnh chụp thẳng từ camera
-  ./run_gui.sh --source anh.jpg --mirrored  ảnh đã lật gương (như output/original)
+  ./run_gui.sh --source anh.jpg   ảnh hoặc video chụp thẳng từ camera (không phải ảnh lật gương)
 
 LỖI THƯỜNG GẶP
   "Không mở được camera"  kiểm tra /dev/video0, user thuộc nhóm video, không có
