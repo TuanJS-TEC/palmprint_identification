@@ -3,39 +3,28 @@
 # palm-enroll configuration (OpenCV FileStorage YAML: keep the %YAML:1.0 line).
 # Relative paths are resolved against the directory of this file.
 # Thresholds were measured with palm_eval on the right hands in output/hand_crop
-# (409 images, 25 people, 2026-10-05, report in eval/); re-measure when the
+# (409 images, 25 people, 2026-10-05); re-measure when the
 # camera, the hand crop or the model changes.
 model:
   onnx: "models/EE_PRnet-epoch-60.onnx"   # from convert_mat_to_onnx.py
   version: "ee_prnet_e60"                    # stored in the gallery; change => re-enroll
   threads: 4                                 # physical cores of the target (i5-10210U: 4)
-  input224_mode: "resize224"                 # resize224 (as in training) | original
 hand:
-  # Only the physical right hand is enrolled and identified (one per person).
-  # right_label: handedness label of the physical right hand in LABELS.csv
-  # (palm_cli --label, palm_eval). The capture script mirrored its frames
-  # before MediaPipe, which labels a hand as it looks in the image, so the
-  # physical right hand is "Left" in log_label.csv (checked: mirrored text in
-  # output/original, palm side of the landmarks, wrist watch; palm_handcheck).
-  # palm_gui does not use it: it detects on real camera frames, where the
-  # right hand is "Right".
-  right_label: "Left"
+  # Only the right hand is enrolled and identified (one per person): the
+  # capture gate rejects a left hand and the back of the hand.
   palm_onnx: "models/palm_detection_mediapipe_2023feb.onnx"            # OpenCV Zoo, Apache-2.0
   landmark_onnx: "models/handpose_estimation_mediapipe_2023feb.onnx"
-preprocess:
-  # 1 if the hand crops are mirror images. The network expects a right palm
-  # seen from the front (thumb on the image's right), as in NTU-PI-v1;
-  # output/hand_crop already is (mirroring them: EER 9.2% -> 10.6%).
-  mirror_input: 0
 template:
   min_valid: 3
   outlier_cos_min: 0.5    # safety net, ~ median impostor score (0.54); no right-hand
                           # enrollment in our data has an outlier
-  dup_cos_max: 0.82       # same as accept_cos_min
+  dup_cos_max: 0.82       # same as accept_cos_min; compared with the closest pair of
+                          # samples (new enrollment vs each enrolled person)
 match:
-  accept_cos_min: 0.82    # FAR 0.1% estimated at 0.795 from only ~6 impostor scores;
+  accept_cos_min: 0.82    # vs the closest stored sample of each person.
+                          # FAR 0.1% estimated at 0.795 from only ~6 impostor scores;
                           # 0.82: 0 wrong accepts, 16.5% single images rejected
-gallery: "gallery.bin"
+gallery: "gallery.db"
 # ---- live capture (palm_gui)
 camera:
   device: 0               # /dev/video0
@@ -47,19 +36,28 @@ capture:
   min_crop_frac: 0.33     # hand crop side / frame height (log: >= 0.36)
   max_motion: 0.02        # landmark motion per frame / crop side
   blur_min: 100           # Laplacian variance; hand_crop p1 116, live-path p1 216
-  # enrollment capture gate (capture_gate.h): checked in this order, after checkHand
+  # capture gate (capture_gate.h), checked in this order after the hand itself
+  # (right hand, palm towards the camera); the crop limits above are part of it
   edge_margin: 0.02       # every landmark keeps this fraction of the frame from the edge
   min_palm_frac: 0.15     # wrist -> middle knuckle / frame height: below = move closer (estimate)
   max_palm_frac: 0.30     # above = move back (estimate)
-  max_angle_deg: 35       # wrist -> middle knuckle from upright
+  max_angle_deg: 35       # wrist -> middle knuckle from upright (rotation in the image plane)
+  # Out-of-plane tilt of the palm plane (MediaPipe world landmarks). One palm's
+  # embedding drifts with it: same-person cos median 0.98 within 5 deg, 0.92 at
+  # 5-10, 0.86 at 10-15, 0.75 at 15-20 (output/original, 2026-10-09). Limiting
+  # enrollment and identification to 25 deg: EER 9.8% -> 2.3-2.9% on that set.
+  max_tilt_deg: 25        # every frame, enrollment and identification
+  frontal_max_deg: 12     # enrollment: the first sample faces the camera (estimate)
+  min_pose_sep_deg: 8     # enrollment: each sample >= this from every earlier one (measurement noise p90 5 deg)
   min_finger_open: 0.6    # mean knuckle -> tip of 4 fingers / wrist -> middle knuckle: below = fingers curled (estimate)
-  min_mean: 50            # palm gray level (0..255): darker = too dark
-  max_mean: 200           # brighter = too bright
+  min_mean: 70            # palm gray level (0..255): darker = too dark (estimate; 50 before 2026-10-09)
+  max_mean: 160           # brighter = too bright (estimate; 200 before). Enrollments on 2026-10-09
+                          # measured 54-117; template cos fell with the brightness difference (r -0.75)
   max_sat_frac: 0.05      # share of palm pixels >= 250
   stable_ms: 400          # held still for this long ...
   stable_min_frames: 10   # ... and over at least this many frames (slow machines)
 session:
-  enroll_samples: 5
+  enroll_samples: 5       # each at a different palm tilt (capture.min_pose_sep_deg), all stored
   enroll_gap_ms: 700      # between two enrollment captures
   enroll_timeout_s: 60
   identify_confirm_frames: 3

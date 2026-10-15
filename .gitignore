@@ -18,7 +18,8 @@ models/
 binary/models/
 binary/palm_cli
 binary/palm_gui
-binary/gallery.bin
+binary/gallery.db
+*.db-journal
 *.onnx
 *.mat
 *.f32
@@ -33,5 +34,6 @@ Palmprint-Recognition-in-the-Wild-master/
 # Local tool settings
 .claude/
 
-# SDK packages for the mobile team (palm-enroll/sdk/make_sdk.sh)
-dist/
+# IDE settings and runtime logs
+.idea/
+*.log

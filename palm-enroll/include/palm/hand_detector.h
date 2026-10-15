@@ -1,0 +1,43 @@
+#pragma once
+// MediaPipe hand pipeline (OpenCV Zoo ONNX conversions, 2023feb):
+//   palm_detection_mediapipe_2023feb.onnx      -> palm box + 7 palm keypoints
+//   handpose_estimation_mediapipe_2023feb.onnx -> 21 landmarks + handedness
+// Port of opencv_zoo models/{palm_detection,handpose_estimation}_mediapipe/
+// mp_palmdet.py and mp_handpose.py, run with ONNX Runtime.
+#include <array>
+#include <memory>
+#include <string>
+
+#include <opencv2/core.hpp>
+
+namespace palm {
+
+struct HandLandmarks {
+  bool found = false;
+  float palmScore = 0.f;   // palm detector score
+  float presence = 0.f;    // landmark model hand presence
+  float handedness = 0.f;  // model output, > 0.5 means MediaPipe label "Right"
+  cv::Rect2f palmBox;      // palm detector box, pixels
+  std::array<cv::Point2f, 21> pts{};  // landmarks, pixels of the input image
+  // Metric 3D landmarks (metres, origin near the hand centre), rotated to the
+  // image axes: x right, y down, z away from the camera (MediaPipe: smaller z
+  // is closer). Only their directions are used (palm plane, capture_gate.h).
+  std::array<cv::Point3f, 21> world{};
+};
+
+class HandDetector {
+ public:
+  HandDetector(const std::string& palmOnnx, const std::string& landmarkOnnx, int threads = 2);
+  ~HandDetector();
+  HandDetector(const HandDetector&) = delete;
+  HandDetector& operator=(const HandDetector&) = delete;
+
+  // bgr: full camera frame. Returns the hand with the largest palm box.
+  HandLandmarks detect(const cv::Mat& bgr);
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> p_;
+};
+
+}  // namespace palm

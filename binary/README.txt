@@ -14,7 +14,10 @@ CHẠY
      xoay lòng bàn tay thẳng hơn, mở ngón tay, đổi vị trí nếu ngược sáng, ...).
   3. Khi đủ điều kiện, viền chuyển xanh và vòng tròn quanh khung chạy dần; giữ yên
      tay cho đến khi vòng đầy thì app tự chụp (màn hình nháy một lần). Chụp 5 mẫu,
-     cách nhau 0.7 giây; giữa các mẫu nghiêng/xoay nhẹ tay.
+     mỗi mẫu ở một góc nghiêng khác. Bản đồ góc (góc phải trên): chấm trắng là
+     hướng lòng bàn tay lúc này, tâm là thẳng vào camera. Mẫu đầu: đưa chấm trắng
+     vào vòng nét đứt. Mẫu sau: nghiêng nhẹ tay để chấm trắng ra ngoài các vùng
+     xanh (mẫu đã chụp) nhưng vẫn trong vòng ngoài.
   4. Đăng ký lại cùng ID: app hỏi có thay mẫu cũ không. Cùng một bàn tay dưới
      ID khác: bị từ chối.
 
@@ -28,7 +31,7 @@ TỆP
   palm_gui, palm_cli   chương trình; palm_cli quản lý gallery bằng dòng lệnh
                        (./palm_cli list, ./palm_cli remove --id user_0001)
   config.yaml          camera, ngưỡng; ngưỡng đo trên dữ liệu output/ của dự án
-  gallery.bin          người đã đăng ký, tạo ở lần đăng ký đầu (CHƯA mã hóa)
+  gallery.db           người đã đăng ký (SQLite), tạo ở lần đăng ký đầu (CHƯA mã hóa)
   palm_gui.log         log sự kiện và độ tin cậy (xem mục LOG)
   models/              EE_PRnet (nhận dạng) + 2 model MediaPipe phát hiện tay (Apache-2.0)
 
@@ -50,8 +53,7 @@ LOG
   Tham số: --log FILE để ghi chỗ khác, --log "" để chỉ hiện trên màn hình.
 
 THỬ KHÔNG CẦN CAMERA
-  ./run_gui.sh --source anh.jpg             ảnh chụp thẳng từ camera
-  ./run_gui.sh --source anh.jpg --mirrored  ảnh đã lật gương (như output/original)
+  ./run_gui.sh --source anh.jpg   ảnh hoặc video chụp thẳng từ camera (không phải ảnh lật gương)
 
 LỖI THƯỜNG GẶP
   "Không mở được camera"  kiểm tra /dev/video0, user thuộc nhóm video, không có
